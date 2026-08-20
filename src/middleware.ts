@@ -4,6 +4,7 @@ import { getRequestEvent } from "solid-js/web";
 import { z } from "zod";
 import type { OrgClaim } from "~/lib/auth";
 import { ACTIVE_ORG_COOKIE } from "~/server/cookies";
+import { applySecurityHeaders } from "~/server/security-headers";
 import { createRequestClient } from "~/server/supabase";
 
 /**
@@ -56,6 +57,8 @@ export default createMiddleware([
     if (!event) return next();
 
     event.locals.requestId = crypto.randomUUID();
+    event.locals.nonce = crypto.randomUUID().replaceAll("-", "");
+    applySecurityHeaders(event, event.locals.nonce);
 
     const supabase = createRequestClient(event);
     event.locals.supabase = supabase;

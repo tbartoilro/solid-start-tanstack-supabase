@@ -51,7 +51,17 @@ function QueryState() {
 
   const payload = JSON.stringify(dehydrate(getQueryClient(router))).replace(/</g, "\\u003c");
 
-  return <script id={QUERY_STATE_ID} type="application/json" innerHTML={payload} />;
+  // `type="application/json"` is a data block, not executed, so CSP script-src
+  // does not gate it — but the nonce is carried anyway so the tag stays valid
+  // under stricter policies and older implementations.
+  return (
+    <script
+      id={QUERY_STATE_ID}
+      type="application/json"
+      nonce={getRequestEvent()?.locals.nonce}
+      innerHTML={payload}
+    />
+  );
 }
 
 export default createHandler(
@@ -74,6 +84,9 @@ export default createHandler(
       )}
     />
   ),
-  undefined,
+  // Hands SolidStart the nonce minted in middleware, so the client entry script
+  // it injects carries `nonce="..."` and satisfies the strict CSP set alongside
+  // it. Without this the production policy would block the app's own bootstrap.
+  (event) => ({ nonce: event.locals.nonce }),
   routerLoad,
 );

@@ -169,6 +169,39 @@ it is a trigger, not service code:
 - **Permissions are read from `role_permissions`**, never mirrored in TypeScript,
   so the UI cannot disagree with the database about what a role may do.
 
+### Hardening
+
+- **Structured, request-scoped logging** (`src/server/log.ts`) — every line
+  carries the `requestId` from middleware, so an RPC call, the database error it
+  caused and the response the user saw can be stitched together from logs alone.
+  Sensitive keys are redacted before they reach a sink.
+- **Rate limiting** (`src/server/rate-limit.ts`) on sign-in (per account *and*
+  per address), sign-up, and invites (per organization, since an account with
+  `members.invite` is otherwise a spam relay). In-memory and therefore
+  per-process — documented as a speed bump, not an exact global limit.
+- **Strict CSP with per-request nonces**, production only. Two design decisions
+  make it possible without escape hatches: `serialization.mode` is `"json"` so
+  payloads are parsed rather than evaluated (no `'unsafe-eval'`), and no Supabase
+  client runs in the browser so `connect-src` stays `'self'`. Verified: the app
+  hydrates and functions under the policy, not merely that the header is present.
+
+### Deployment
+
+The built server reads real environment variables — it does **not** load `.env`.
+`VITE_`-prefixed values are inlined at build time; `SUPABASE_SECRET_KEY` must be
+present in the process environment at boot:
+
+```bash
+npm run build
+SUPABASE_SECRET_KEY=... NODE_ENV=production PORT=3000 node .output/server/index.mjs
+```
+
+Env validation runs at module load, so a missing variable fails loudly on
+startup rather than surfacing later as a confusing runtime error.
+
+Output is a Nitro build, so the usual presets (Node, Vercel, Cloudflare,
+Netlify) apply via Nitro configuration.
+
 ---
 
 ## Verification
@@ -179,6 +212,7 @@ npm run verify        # typecheck + all three suites
 
 | Command | What it proves |
 |---|---|
+| `npm test` | Pure policy logic with no server or database: the full role-escalation matrix and per-org permission scoping. 28 tests. |
 | `npm run verify:rbac` | RLS, tenant isolation and the JWT hook, hit through PostgREST with real tokens and **the app not running**. 19 checks. |
 | `npm run verify:ssr` | Authenticated loader data is in the server's bytes, hydration refetches nothing, client nav does not reload. 7 checks. |
 | `npm run verify:app` | The app end-to-end, including calling RPC endpoints directly to bypass every route guard. 19 checks. |

@@ -11,6 +11,8 @@ declare global {
       router: ReturnType<typeof createRouter>;
       /** Correlation id assigned by `src/middleware.ts`. */
       requestId: string;
+      /** Per-request CSP nonce, applied to the client entry script. */
+      nonce: string;
       /** Request-scoped Supabase client acting as the signed-in user. */
       supabase: Db;
       /** Verified identity, or null when the request is anonymous. */

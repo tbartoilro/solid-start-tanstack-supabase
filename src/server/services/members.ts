@@ -42,7 +42,7 @@ const RANK: Record<AppRole, number> = { viewer: 0, member: 1, admin: 2, owner: 3
  * Without this an `admin` — who legitimately holds `members.manage` — could
  * create an `owner` and thereby escalate beyond their own authority.
  */
-function assertCanAssignRole(actorRole: AppRole, targetRole: AppRole): void {
+export function assertCanAssignRole(actorRole: AppRole, targetRole: AppRole): void {
   if (RANK[targetRole] > RANK[actorRole]) {
     throw forbidden(`You cannot grant the "${targetRole}" role, which outranks your own.`);
   }

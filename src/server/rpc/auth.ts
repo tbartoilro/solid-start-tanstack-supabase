@@ -8,6 +8,8 @@ import { isProduction } from "~/lib/env";
 import { requireAuth } from "~/server/context";
 import { conflict, invalidInput, unauthenticated } from "~/server/errors";
 import { ACTIVE_ORG_COOKIE, baseCookieOptions } from "~/server/cookies";
+import { log } from "~/server/log";
+import { enforceRateLimit } from "~/server/rate-limit";
 
 /**
  * Authentication RPC.
@@ -100,19 +102,35 @@ export async function signInWithPassword(input: unknown): Promise<{ ok: true }> 
   const parsed = credentialsSchema.safeParse(input);
   if (!parsed.success) throw invalidInput("Check your details.", z.flattenError(parsed.error));
 
+  // Two windows: a tight one per account, so a single target cannot be brute
+  // forced, and a looser one per address, so one client cannot spray many
+  // accounts while staying under the per-account limit.
+  const email = parsed.data.email.toLowerCase();
+  enforceRateLimit({ name: "sign-in", subject: email, limit: 5, windowMs: 15 * 60_000 });
+  enforceRateLimit({ name: "sign-in-addr", limit: 30, windowMs: 15 * 60_000 });
+
   const { error } = await event().locals.supabase.auth.signInWithPassword(parsed.data);
 
-  // Supabase distinguishes "no such user" from "wrong password"; the client is
-  // told neither, so the endpoint cannot be used to discover which emails have
-  // accounts.
-  if (error) throw unauthenticated("Those credentials are not valid.");
+  if (error) {
+    // Logged server-side because repeated failures are a security signal; the
+    // client is told nothing beyond "invalid".
+    log.warn("failed sign-in", { email });
+    // Supabase distinguishes "no such user" from "wrong password"; the client is
+    // told neither, so the endpoint cannot be used to discover which emails have
+    // accounts.
+    throw unauthenticated("Those credentials are not valid.");
+  }
 
+  log.info("sign-in succeeded", { email });
   return { ok: true };
 }
 
 export async function signUpWithPassword(input: unknown): Promise<{ ok: true; needsConfirmation: boolean }> {
   const parsed = signUpSchema.safeParse(input);
   if (!parsed.success) throw invalidInput("Check your details.", z.flattenError(parsed.error));
+
+  // Account creation is the classic target for automated abuse.
+  enforceRateLimit({ name: "sign-up", limit: 5, windowMs: 60 * 60_000 });
 
   const { data, error } = await event().locals.supabase.auth.signUp({
     email: parsed.data.email,

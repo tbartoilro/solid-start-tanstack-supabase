@@ -19,6 +19,20 @@ export const Route = createRootRouteWithContext<RouterContext>()({
     return { session };
   },
   component: RootComponent,
+  // Anything a loader or component throws lands here rather than blanking the
+  // page. The message is whatever the RPC boundary judged safe to send — see
+  // src/server/on-error.ts — never a raw stack.
+  errorComponent: (props) => (
+    <main class="centered">
+      <div class="card">
+        <h1>Something went wrong</h1>
+        <p class="error">{props.error.message}</p>
+        <p>
+          <a href="/">Return to the dashboard</a>
+        </p>
+      </div>
+    </main>
+  ),
   notFoundComponent: () => (
     <main class="centered">
       <h1>Not found</h1>

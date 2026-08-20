@@ -2,6 +2,7 @@
 
 import { z } from "zod";
 import { authorize, orgScoped } from "../guard";
+import { enforceRateLimit } from "../rate-limit";
 import * as members from "../services/members";
 
 const roleEnum = z.enum(["owner", "admin", "member", "viewer"]);
@@ -42,6 +43,13 @@ const inviteSchema = orgScoped.extend({
 
 export async function inviteMember(input: unknown) {
   const { input: data, ctx } = await authorize("members.invite", inviteSchema, input);
+
+  // Invites send mail to arbitrary addresses on the organization's behalf, so an
+  // account with members.invite is a spam relay if left unthrottled. Scoped per
+  // organization rather than per address: the limit should follow the tenant,
+  // not the network path the request happened to take.
+  enforceRateLimit({ name: "invite", subject: ctx.orgId, limit: 20, windowMs: 60 * 60_000 });
+
   return members.inviteMember(ctx, data);
 }
 
