@@ -17,7 +17,7 @@ export async function listInvitations(input: unknown) {
 }
 
 const changeRoleSchema = orgScoped.extend({
-  membershipId: z.uuid(),
+  membershipId: z.guid(),
   role: roleEnum,
 });
 
@@ -27,7 +27,7 @@ export async function changeMemberRole(input: unknown) {
   return { ok: true as const };
 }
 
-const removeSchema = orgScoped.extend({ membershipId: z.uuid() });
+const removeSchema = orgScoped.extend({ membershipId: z.guid() });
 
 export async function removeMember(input: unknown) {
   const { input: data, ctx } = await authorize("members.manage", removeSchema, input);
@@ -45,7 +45,7 @@ export async function inviteMember(input: unknown) {
   return members.inviteMember(ctx, data);
 }
 
-const revokeSchema = orgScoped.extend({ invitationId: z.uuid() });
+const revokeSchema = orgScoped.extend({ invitationId: z.guid() });
 
 export async function revokeInvitation(input: unknown) {
   const { input: data, ctx } = await authorize("members.manage", revokeSchema, input);

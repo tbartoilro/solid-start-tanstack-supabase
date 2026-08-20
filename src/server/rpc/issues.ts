@@ -13,9 +13,9 @@ const priorityEnum = z.enum(["none", "low", "medium", "high", "urgent"]);
  * that happens to call it.
  */
 const listSchema = orgScoped.extend({
-  projectId: z.uuid().optional(),
+  projectId: z.guid().optional(),
   status: z.array(statusEnum).optional(),
-  assigneeId: z.uuid().optional(),
+  assigneeId: z.guid().optional(),
   search: z.string().trim().max(200).optional(),
   page: z.coerce.number().int().min(1).catch(1),
   pageSize: z.coerce.number().int().min(1).max(100).catch(25),
@@ -27,12 +27,12 @@ export async function listIssues(input: unknown) {
 }
 
 const createSchema = orgScoped.extend({
-  projectId: z.uuid(),
+  projectId: z.guid(),
   title: z.string().trim().min(1, "Give the issue a title.").max(200),
   description: z.string().trim().max(10_000).nullish(),
   status: statusEnum.optional(),
   priority: priorityEnum.optional(),
-  assigneeId: z.uuid().nullish(),
+  assigneeId: z.guid().nullish(),
 });
 
 export async function createIssue(input: unknown) {
@@ -41,12 +41,12 @@ export async function createIssue(input: unknown) {
 }
 
 const updateSchema = orgScoped.extend({
-  issueId: z.uuid(),
+  issueId: z.guid(),
   title: z.string().trim().min(1).max(200).optional(),
   description: z.string().trim().max(10_000).nullish(),
   status: statusEnum.optional(),
   priority: priorityEnum.optional(),
-  assigneeId: z.uuid().nullish(),
+  assigneeId: z.guid().nullish(),
 });
 
 export async function updateIssue(input: unknown) {
@@ -61,8 +61,8 @@ export async function updateIssue(input: unknown) {
  * `issues.write` would inherit `issues.assign` for free.
  */
 const assignSchema = orgScoped.extend({
-  issueId: z.uuid(),
-  assigneeId: z.uuid().nullable(),
+  issueId: z.guid(),
+  assigneeId: z.guid().nullable(),
 });
 
 export async function assignIssue(input: unknown) {
@@ -71,7 +71,7 @@ export async function assignIssue(input: unknown) {
   return { ok: true as const };
 }
 
-const deleteSchema = orgScoped.extend({ issueId: z.uuid() });
+const deleteSchema = orgScoped.extend({ issueId: z.guid() });
 
 export async function deleteIssue(input: unknown) {
   const { input: data, ctx } = await authorize("issues.write", deleteSchema, input);

@@ -17,7 +17,7 @@ export async function listProjects(input: unknown) {
   return projects.listProjects(ctx);
 }
 
-const getSchema = orgScoped.extend({ projectId: z.uuid() });
+const getSchema = orgScoped.extend({ projectId: z.guid() });
 
 export async function getProject(input: unknown) {
   const { input: data, ctx } = await authorize("projects.read", getSchema, input);
@@ -40,7 +40,7 @@ export async function createProject(input: unknown) {
 }
 
 const updateSchema = orgScoped.extend({
-  projectId: z.uuid(),
+  projectId: z.guid(),
   name: z.string().trim().min(1).max(120).optional(),
   description: z.string().trim().max(2000).nullish(),
   archived: z.boolean().optional(),
@@ -52,7 +52,7 @@ export async function updateProject(input: unknown) {
   return { ok: true as const };
 }
 
-const deleteSchema = orgScoped.extend({ projectId: z.uuid() });
+const deleteSchema = orgScoped.extend({ projectId: z.guid() });
 
 export async function deleteProject(input: unknown) {
   const { input: data, ctx } = await authorize("projects.delete", deleteSchema, input);

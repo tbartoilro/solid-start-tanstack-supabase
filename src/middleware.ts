@@ -8,18 +8,36 @@ import { createRequestClient } from "~/server/supabase";
 
 /**
  * The JWT is signed by Supabase, but it is still input. Parsing the claim
- * defensively means a malformed or unexpected shape degrades to "no orgs"
- * rather than propagating `undefined` into authorization-adjacent code.
+ * defensively means a malformed shape degrades to "no orgs" rather than
+ * propagating `undefined` into authorization-adjacent code.
+ *
+ * `z.guid()` and not `z.uuid()`: Zod 4's `uuid()` enforces the RFC 9562
+ * version and variant bits, while a Postgres `uuid` column happily stores any
+ * 128-bit value. Validating version bits on database ids rejects perfectly
+ * legitimate keys — including every fixture id in supabase/seed.sql — and,
+ * because the failure lands in the `.catch()` below, does so *silently*: the
+ * user simply appears to belong to no organizations.
  */
-const orgsClaimSchema = z
-  .array(
-    z.object({
-      id: z.uuid(),
-      slug: z.string(),
-      role: z.enum(["owner", "admin", "member", "viewer"]),
-    }),
-  )
-  .catch([]);
+const orgsClaimSchema = z.array(
+  z.object({
+    id: z.guid(),
+    slug: z.string(),
+    role: z.enum(["owner", "admin", "member", "viewer"]),
+  }),
+);
+
+function parseOrgsClaim(raw: unknown): OrgClaim[] {
+  const parsed = orgsClaimSchema.safeParse(raw ?? []);
+  if (parsed.success) return parsed.data;
+
+  // Falling back to "no orgs" is the safe default, but it must never be quiet:
+  // an unparseable claim looks exactly like a user with no memberships, which
+  // is indistinguishable from a permissions bug from the outside.
+  console.error("[middleware] could not parse `orgs` claim; treating as no memberships", {
+    issues: z.flattenError(parsed.error),
+  });
+  return [];
+}
 
 /**
  * Runs before `routerLoad`, so everything it puts on `event.locals` is
@@ -55,7 +73,7 @@ export default createMiddleware([
       return next();
     }
 
-    const orgs: OrgClaim[] = orgsClaimSchema.parse(claims.orgs ?? []);
+    const orgs = parseOrgsClaim(claims.orgs);
 
     event.locals.auth = {
       userId: claims.sub,

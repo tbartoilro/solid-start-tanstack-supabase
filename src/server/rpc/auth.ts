@@ -144,7 +144,7 @@ export async function signOut(): Promise<{ ok: true }> {
  * cookie can never be hand-edited into a tenant the user does not belong to.
  */
 export async function setActiveOrg(orgId: unknown): Promise<{ ok: true }> {
-  const parsed = z.uuid().safeParse(orgId);
+  const parsed = z.guid().safeParse(orgId);
   if (!parsed.success) throw invalidInput("Unknown organization.");
 
   const ctx = requireAuth();

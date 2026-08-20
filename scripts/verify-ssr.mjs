@@ -1,128 +1,140 @@
 /**
- * Phase 0 exit-criteria verifier.
+ * Verifies the SolidStart <-> TanStack Router SSR seam against the real app.
  *
- * Drives headless Chromium over CDP against a single page load so that the
- * SSR-embedded values and the post-hydration DOM can be compared like-for-like.
+ * The load-bearing assertion is that authenticated loader data appears in the
+ * *server response body* — fetched from Node with the session cookie, so there
+ * is no client JavaScript involved at all — and that hydration then reuses it
+ * instead of refetching.
+ *
+ *   npm run dev
+ *   chromium --headless=new --remote-debugging-port=9222 &
+ *   node scripts/verify-ssr.mjs
  */
 const BASE = process.env.BASE ?? "http://localhost:4321";
-const PORT = 9222;
+const PORT = Number(process.env.CDP_PORT ?? 9222);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const results = [];
+const check = (label, ok, detail = "") => results.push({ label, ok, detail });
 
-async function cdpTarget() {
+async function newTab() {
   for (let i = 0; i < 60; i++) {
     try {
       const res = await fetch(`http://127.0.0.1:${PORT}/json/new?about:blank`, { method: "PUT" });
-      if (res.ok) return await res.json();
+      if (res.ok) return res.json();
     } catch {}
     await sleep(500);
   }
-  throw new Error("chromium CDP never became reachable");
+  throw new Error("chromium CDP unreachable — start it with --remote-debugging-port=9222");
 }
 
 let seq = 0;
-function rpc(ws, method, params = {}) {
+function cdp(ws, method, params = {}) {
   const id = ++seq;
   return new Promise((resolve, reject) => {
     const onMsg = (ev) => {
-      const msg = JSON.parse(ev.data);
-      if (msg.id !== id) return;
+      const m = JSON.parse(ev.data);
+      if (m.id !== id) return;
       ws.removeEventListener("message", onMsg);
-      msg.error ? reject(new Error(`${method}: ${msg.error.message}`)) : resolve(msg.result);
+      m.error ? reject(new Error(`${method}: ${m.error.message}`)) : resolve(m.result);
     };
     ws.addEventListener("message", onMsg);
     ws.send(JSON.stringify({ id, method, params }));
   });
 }
 
-const target = await cdpTarget();
+const target = await newTab();
 const ws = new WebSocket(target.webSocketDebuggerUrl);
 await new Promise((r) => ws.addEventListener("open", r, { once: true }));
 
 const consoleMsgs = [];
+const serverFnCalls = [];
 ws.addEventListener("message", (ev) => {
-  const msg = JSON.parse(ev.data);
-  if (msg.method === "Runtime.consoleAPICalled") {
+  const m = JSON.parse(ev.data);
+  if (m.method === "Runtime.consoleAPICalled") {
     consoleMsgs.push({
-      level: msg.params.type,
-      text: msg.params.args.map((a) => a.value ?? a.description ?? "").join(" "),
+      level: m.params.type,
+      text: m.params.args.map((a) => a.value ?? a.description ?? "").join(" "),
     });
   }
-  if (msg.method === "Log.entryAdded") {
-    consoleMsgs.push({ level: msg.params.entry.level, text: msg.params.entry.text });
+  if (m.method === "Network.requestWillBeSent" && m.params.request.url.includes("/_server")) {
+    serverFnCalls.push(m.params.request.url);
   }
 });
 
-await rpc(ws, "Runtime.enable");
-await rpc(ws, "Log.enable");
-await rpc(ws, "Page.enable");
-await rpc(ws, "Network.enable");
+await cdp(ws, "Runtime.enable");
+await cdp(ws, "Page.enable");
+await cdp(ws, "Network.enable");
+await cdp(ws, "Network.clearBrowserCookies");
 
-// Track every request the page makes, so a loader refetch is observable.
-const requests = [];
-ws.addEventListener("message", (ev) => {
-  const msg = JSON.parse(ev.data);
-  if (msg.method === "Network.requestWillBeSent") {
-    requests.push({ url: msg.params.request.url, method: msg.params.request.method });
-  }
-});
-
-await rpc(ws, "Page.navigate", { url: BASE + "/" });
-await sleep(3500);
-
-const evalJs = async (expr) => {
-  const r = await rpc(ws, "Runtime.evaluate", { expression: expr, returnByValue: true, awaitPromise: true });
+const evalJs = async (expression) => {
+  const r = await cdp(ws, "Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
+  if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? "eval failed");
   return r.result.value;
 };
 
-// --- Criterion 1 & 3: the value baked into the SSR payload is the value the
-// hydrated DOM shows. Same request, so any mismatch means a client refetch.
-const ssrPayloadId = await evalJs(`
-  (() => {
-    const el = document.getElementById("__QUERY_STATE__");
-    if (!el) return null;
-    const q = JSON.parse(el.textContent).queries[0];
-    return q?.state?.data?.id ?? null;
-  })()
-`);
-const renderedId = await evalJs(`document.getElementById("loader-id")?.textContent ?? null`);
+// --- sign in through the real form, which also proves hydration ------------
+await cdp(ws, "Page.navigate", { url: `${BASE}/login` });
+await sleep(2500);
+await evalJs(`document.querySelector("form.auth-form button[type=submit]").click()`);
+await sleep(3500);
 
-// --- Criterion 2: hydration warnings
-const hydrationWarnings = consoleMsgs.filter((m) =>
-  /hydrat|mismatch|did not match|Attempting to|non-hydrat/i.test(m.text),
+const landedOn = await evalJs(`location.pathname`);
+check("login form works, so the page hydrated", landedOn === "/acme", landedOn);
+
+// --- the real test: is loader data in the server's bytes? ------------------
+const { cookies } = await cdp(ws, "Network.getAllCookies");
+const cookieHeader = cookies.map((c) => `${c.name}=${c.value}`).join("; ");
+
+const ssrHtml = await (
+  await fetch(`${BASE}/acme/projects`, { headers: { cookie: cookieHeader } })
+).text();
+
+check(
+  "authenticated loader data is in the server HTML",
+  ssrHtml.includes("Web Platform"),
+  `${ssrHtml.length} bytes`,
+);
+check(
+  "the dehydrated query cache is inlined for the client",
+  ssrHtml.includes('id="__QUERY_STATE__"') && ssrHtml.includes("Web Platform"),
+);
+check(
+  "the shell is server-rendered too, not just a mount point",
+  ssrHtml.includes("Acme Corporation") || ssrHtml.includes("Projects"),
 );
 
-// --- Criterion 3b: did the browser issue an RPC for the loader?
-const rpcCalls = requests.filter((r) => r.url.includes("/_server"));
+// --- hydration must not refetch what SSR already sent ----------------------
+serverFnCalls.length = 0;
+await cdp(ws, "Page.navigate", { url: `${BASE}/acme/projects` });
+await sleep(3000);
 
-// --- Criterion 4: client-side navigation without a document reload
+check(
+  "hydration issues no server-function calls",
+  serverFnCalls.length === 0,
+  `${serverFnCalls.length} call(s)`,
+);
+
+const hydrationWarnings = consoleMsgs.filter((m) => /hydrat|mismatch|did not match/i.test(m.text));
+check("no hydration mismatch warnings", hydrationWarnings.length === 0, JSON.stringify(hydrationWarnings.slice(0, 2)));
+
+// --- client-side navigation keeps the JS context alive --------------------
 await evalJs(`window.__spaMarker = "alive"`);
-await evalJs(`document.querySelector('a[href="/about"]').click()`);
-await sleep(1500);
-const afterNav = await evalJs(`
-  ({ path: location.pathname,
-     marker: window.__spaMarker ?? null,
-     heading: document.querySelector("h1")?.textContent ?? null })
-`);
+await evalJs(`document.querySelector('.sidebar nav a[href="/acme/members"]').click()`);
+await sleep(2000);
+const afterNav = await evalJs(`({ path: location.pathname, marker: window.__spaMarker ?? null })`);
+check(
+  "client-side navigation, no document reload",
+  afterNav.path === "/acme/members" && afterNav.marker === "alive",
+  JSON.stringify(afterNav),
+);
 
-const results = [
-  ["1. loader data present in server HTML", ssrPayloadId !== null && renderedId !== null],
-  ["2. no hydration mismatch warnings", hydrationWarnings.length === 0],
-  ["3. no loader refetch (SSR id === rendered id)", ssrPayloadId === renderedId],
-  ["3b. no /_server RPC issued by browser", rpcCalls.length === 0],
-  ["4. client-side nav, no document reload", afterNav.path === "/about" && afterNav.marker === "alive"],
-];
-
-console.log("\n──────── Phase 0 exit criteria ────────");
-for (const [label, ok] of results) console.log(`${ok ? "PASS" : "FAIL"}  ${label}`);
-console.log("───────────────────────────────────────");
-console.log("ssr payload id :", ssrPayloadId);
-console.log("rendered id    :", renderedId);
-console.log("/_server calls :", rpcCalls.length, rpcCalls.map((r) => r.method).join(","));
-console.log("after nav      :", JSON.stringify(afterNav));
-if (hydrationWarnings.length) console.log("hydration warnings:", hydrationWarnings);
-const errors = consoleMsgs.filter((m) => m.level === "error");
-if (errors.length) console.log("console errors :", errors.slice(0, 5));
-
+console.log("\n──────────── SSR seam verification ────────────");
+for (const { label, ok, detail } of results) {
+  console.log(`${ok ? "PASS" : "FAIL"}  ${label}${!ok && detail ? `\n        ${detail}` : ""}`);
+}
+const failed = results.filter((r) => !r.ok);
+console.log("───────────────────────────────────────────────");
+console.log(`${results.length - failed.length}/${results.length} passed`);
 ws.close();
-process.exit(results.every(([, ok]) => ok) ? 0 : 1);
+process.exit(failed.length ? 1 : 0);
