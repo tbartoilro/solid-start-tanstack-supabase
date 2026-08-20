@@ -1,24 +1,76 @@
 import { createMiddleware } from "@solidjs/start/middleware";
+import { getCookie } from "@solidjs/start/http";
 import { getRequestEvent } from "solid-js/web";
+import { z } from "zod";
+import type { OrgClaim } from "~/lib/auth";
+import { ACTIVE_ORG_COOKIE } from "~/server/cookies";
+import { createRequestClient } from "~/server/supabase";
 
 /**
- * Runs before `routerLoad`, so anything placed on `event.locals` here is
- * visible to every TanStack Router loader and every server function.
+ * The JWT is signed by Supabase, but it is still input. Parsing the claim
+ * defensively means a malformed or unexpected shape degrades to "no orgs"
+ * rather than propagating `undefined` into authorization-adjacent code.
+ */
+const orgsClaimSchema = z
+  .array(
+    z.object({
+      id: z.uuid(),
+      slug: z.string(),
+      role: z.enum(["owner", "admin", "member", "viewer"]),
+    }),
+  )
+  .catch([]);
+
+/**
+ * Runs before `routerLoad`, so everything it puts on `event.locals` is
+ * available to every route loader and every server function on this request.
  *
- * Gotcha worth remembering: the `event` handed to a middleware is the *h3*
- * event, which has no `locals`. SolidStart's own request event — the one
- * carrying `locals` — is only reachable through `getRequestEvent()`, because
- * the middleware is wrapped in `provideRequestEvent` before it runs.
+ * Its job is strictly to establish *who is asking*. It makes no authorization
+ * decisions — those belong to the server functions in `src/server/rpc`, which
+ * enforce them per operation.
  *
- * Phase 2 populates this with the Supabase session and active organization.
- * For now it only tags the request so logging has something to correlate on.
+ * Gotcha: the `event` a middleware receives is the h3 event, which has no
+ * `locals`. SolidStart's request event is reached via `getRequestEvent()`.
  */
 export default createMiddleware([
-  async (_event, next) => {
-    const requestEvent = getRequestEvent();
-    if (requestEvent) {
-      requestEvent.locals.requestId = crypto.randomUUID();
+  async (_h3Event, next) => {
+    const event = getRequestEvent();
+    if (!event) return next();
+
+    event.locals.requestId = crypto.randomUUID();
+
+    const supabase = createRequestClient(event);
+    event.locals.supabase = supabase;
+
+    // `getClaims` verifies the token's signature and refreshes it when needed,
+    // writing any rotated cookies through the `setAll` handler. `getSession()`
+    // is NOT a substitute: it trusts whatever is in the cookie without
+    // verifying it, which is exactly the wrong property on a server.
+    const { data, error } = await supabase.auth.getClaims();
+    const claims = error ? null : (data?.claims ?? null);
+
+    if (!claims?.sub) {
+      event.locals.auth = null;
+      event.locals.activeOrgId = null;
+      return next();
     }
+
+    const orgs: OrgClaim[] = orgsClaimSchema.parse(claims.orgs ?? []);
+
+    event.locals.auth = {
+      userId: claims.sub,
+      email: typeof claims.email === "string" ? claims.email : "",
+      orgs,
+    };
+
+    // Resolve the tenant this request is acting within. The cookie is a
+    // *preference*, never a grant: it is only honoured if the user actually
+    // holds a membership. A stale claim can at worst select an org whose rows
+    // RLS will then refuse to return.
+    const requested = getCookie(ACTIVE_ORG_COOKIE);
+    const valid = requested && orgs.some((o) => o.id === requested);
+    event.locals.activeOrgId = valid ? requested : (orgs[0]?.id ?? null);
+
     return next();
   },
 ]);

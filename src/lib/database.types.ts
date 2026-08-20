@@ -383,6 +383,13 @@ export type Database = {
     }
     Functions: {
       custom_access_token_hook: { Args: { event: Json }; Returns: Json }
+      has_permission: {
+        Args: {
+          org_id: string
+          permission: Database["public"]["Enums"]["app_permission"]
+        }
+        Returns: boolean
+      }
     }
     Enums: {
       app_permission:

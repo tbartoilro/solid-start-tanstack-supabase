@@ -15,7 +15,7 @@
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noEmit": true,
-    "types": ["vite/client", "@solidjs/start/env"],
+    "types": ["vite/client", "@solidjs/start/env", "node"],
     "baseUrl": ".",
     "paths": {
       "~/*": ["./src/*"]

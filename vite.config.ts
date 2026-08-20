@@ -12,6 +12,11 @@ export default defineConfig({
       // for the same files.
       routeDir: "./api",
       middleware: "src/middleware.ts",
+      serverFunctions: {
+        // Sanitizes anything a server function throws before it reaches the
+        // client, so internal errors never leak schema or stack details.
+        onError: "src/server/on-error.ts",
+      },
     }),
     tanstackRouter({ target: "solid" }),
     nitro(),

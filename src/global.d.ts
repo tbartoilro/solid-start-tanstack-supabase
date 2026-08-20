@@ -1,6 +1,8 @@
 /// <reference types="@solidjs/start/env" />
 
 import type { createRouter } from "./router";
+import type { RequestAuth } from "./server/context";
+import type { Db } from "./server/supabase";
 
 declare global {
   namespace App {
@@ -9,6 +11,12 @@ declare global {
       router: ReturnType<typeof createRouter>;
       /** Correlation id assigned by `src/middleware.ts`. */
       requestId: string;
+      /** Request-scoped Supabase client acting as the signed-in user. */
+      supabase: Db;
+      /** Verified identity, or null when the request is anonymous. */
+      auth: RequestAuth | null;
+      /** Tenant this request is acting within, validated against membership. */
+      activeOrgId: string | null;
     }
   }
 }
