@@ -22,3 +22,6 @@ supabase/.temp/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# panda css codegen output
+styled-system/

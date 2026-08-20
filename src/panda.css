@@ -1,0 +1,10 @@
+/*
+ * Panda's entry point. The PostCSS plugin replaces these layer declarations
+ * with the generated stylesheet.
+ *
+ * NOT imported yet — `src/app.tsx` still imports `app.css`, the hand-written
+ * placeholder styling. Swap the import once Park UI components are installed;
+ * see "Adding Park UI" in the README. Importing both at once means Panda's
+ * preflight reset and app.css fight over the same elements.
+ */
+@layer reset, base, tokens, recipes, utilities;
