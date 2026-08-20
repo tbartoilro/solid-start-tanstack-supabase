@@ -1,0 +1,33 @@
+{
+  "name": "solid_start_experimental",
+  "version": "1.0.0",
+  "description": "Production-grade multi-tenant RBAC dashboard: SolidStart v2 + TanStack Router + Supabase",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "start": "node .output/server/index.mjs",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "db:start": "supabase start",
+    "db:stop": "supabase stop",
+    "db:reset": "supabase db reset",
+    "db:types": "supabase gen types typescript --local > src/lib/database.types.ts"
+  },
+  "dependencies": {
+    "@solidjs/router": "^1.0.0",
+    "@solidjs/start": "^2.0.2",
+    "@tanstack/solid-query": "^5.101.4",
+    "@tanstack/solid-router": "^1.170.29",
+    "@tanstack/solid-router-devtools": "^1.167.1",
+    "nitro": "^3.0.260610-beta",
+    "solid-js": "^1.9.14"
+  },
+  "devDependencies": {
+    "@tanstack/router-plugin": "^1.168.34",
+    "typescript": "^5.5.3",
+    "vite": "^8.2.2",
+    "vite-plugin-solid": "^2.11.13"
+  }
+}
