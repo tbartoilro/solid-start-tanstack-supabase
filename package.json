@@ -18,11 +18,14 @@
   "dependencies": {
     "@solidjs/router": "^1.0.0",
     "@solidjs/start": "^2.0.2",
+    "@supabase/ssr": "^0.12.4",
+    "@supabase/supabase-js": "^2.112.3",
     "@tanstack/solid-query": "^5.101.4",
     "@tanstack/solid-router": "^1.170.29",
     "@tanstack/solid-router-devtools": "^1.167.1",
     "nitro": "^3.0.260610-beta",
-    "solid-js": "^1.9.14"
+    "solid-js": "^1.9.14",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@tanstack/router-plugin": "^1.168.34",
