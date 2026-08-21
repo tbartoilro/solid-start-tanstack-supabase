@@ -1,6 +1,5 @@
 import { expect, test } from "@playwright/test";
 import { PASSWORD, navLinks, signIn, signOut } from "./helpers";
-import { execSync } from "node:child_process";
 
 /**
  * The onboarding loop: sign up, create an organization, invite, accept.
@@ -28,38 +27,32 @@ const orgName = `Wonderland ${stamp}`;
 const orgSlug = `wonderland-${stamp}`;
 
 /**
- * Reads the invitation token straight from the database.
+ * Reads the accept link out of the Members page.
  *
- * The token only ever reaches a real invitee by email, so a test has to look it
- * up out of band. Done over PostgREST with the service key rather than by
- * shelling out to psql, so the suite needs no postgres client on PATH — which
- * is what CI would otherwise have to install.
+ * Deliberately not an out-of-band database lookup. An earlier version read the
+ * token via PostgREST with the service key from `supabase status -o json`, which
+ * worked locally and returned 403 in CI — the CLI version there reports a key
+ * PostgREST does not accept as service-role. Depending on the CLI's key naming
+ * was the mistake.
+ *
+ * Reading it from the UI removes that coupling and covers more: with no mail
+ * provider configured — CI's state, and every fresh clone's — the page is
+ * *supposed* to surface the link, so this asserts the fallback exists rather
+ * than working around its absence.
+ *
+ * Matched by text pattern rather than by class or test id so it survives the
+ * Park UI migration.
  */
-async function invitationToken(email: string): Promise<string> {
-  // stderr is muted: the CLI prints unrelated "Stopped services" notices that
-  // would otherwise interleave with the test reporter output.
-  const status = JSON.parse(
-    execSync("supabase status -o json", { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }),
-  );
-  const key: string = status.SECRET_KEY ?? status.SERVICE_ROLE_KEY;
+async function acceptLinkFromPage(page: import("@playwright/test").Page): Promise<string> {
+  const link = page.getByText(/\/accept-invite\?token=[a-f0-9]{64}/);
+  await expect(link).toBeVisible();
 
-  const res = await fetch(
-    `${status.API_URL}/rest/v1/invitations?select=token&accepted_at=is.null&email=eq.${encodeURIComponent(email)}`,
-    { headers: { apikey: key, authorization: `Bearer ${key}` } },
-  );
-  if (!res.ok) throw new Error(`invitation lookup failed: ${res.status}`);
-
-  const rows = (await res.json()) as { token: string }[];
-  const token = rows[0]?.token;
-  if (!token) throw new Error(`no pending invitation for ${email}`);
-  return token;
+  const text = (await link.textContent()) ?? "";
+  const match = text.match(/https?:\/\/\S*\/accept-invite\?token=[a-f0-9]{64}/);
+  if (!match) throw new Error(`no accept link in: ${text}`);
+  return match[0];
 }
 
-/**
- * `navigate: false` matters: when arriving here from an invitation redirect the
- * URL already carries `?invite=<token>`, and re-visiting /signup would throw
- * that away — which is exactly how the invited user loses their invitation.
- */
 async function signUp(
   page: import("@playwright/test").Page,
   email: string,
@@ -104,7 +97,8 @@ test("an invitation can be created and then accepted by its recipient", async ({
   await page.getByRole("button", { name: "Send invite" }).click();
   await expect(page.getByText(bob)).toBeVisible();
 
-  const token = await invitationToken(bob);
+  const acceptUrl = await acceptLinkFromPage(page);
+  const token = new URL(acceptUrl).searchParams.get("token") ?? "";
   expect(token).toMatch(/^[a-f0-9]{64}$/);
 
   await signOut(page);
@@ -136,7 +130,7 @@ test("a signed-in user cannot redeem an invitation addressed to someone else", a
   await page.getByRole("button", { name: "Send invite" }).click();
   await expect(page.getByText(target)).toBeVisible();
 
-  const token = await invitationToken(target);
+  const token = new URL(await acceptLinkFromPage(page)).searchParams.get("token") ?? "";
 
   // Alice is signed in, but the invitation is addressed to Carol. The UI says
   // so, and the button is disabled — the database would refuse it regardless.
