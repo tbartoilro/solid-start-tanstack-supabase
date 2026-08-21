@@ -25,6 +25,15 @@ export default defineConfig({
   workers: 1,
   reporter: process.env.CI ? [["github"], ["list"]] : [["list"]],
 
+  // The suite runs against a Vite *dev* server, because the direct-RPC tests
+  // import server modules by source path — the check that a route guard is not
+  // the thing protecting an endpoint. Dev mode means the first hit on any route
+  // pays for an on-demand SSR compile, which on a cold CI runner comfortably
+  // exceeds Playwright's 5s default. Raised rather than papered over with
+  // waitForTimeout calls.
+  expect: { timeout: process.env.CI ? 20_000 : 8_000 },
+  timeout: process.env.CI ? 90_000 : 45_000,
+
   use: {
     baseURL: process.env.E2E_BASE_URL ?? "http://127.0.0.1:3010",
     trace: "retain-on-failure",

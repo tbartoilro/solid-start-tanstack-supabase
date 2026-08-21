@@ -43,8 +43,9 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      # Includes the RLS integration suite, which skips itself when the stack is
-      # unreachable — so the step below asserts nothing was skipped.
+      # Includes the RLS integration suite — 19 checks against PostgREST with the
+      # application not running — which skips itself when the stack is
+      # unreachable, so the step below asserts nothing was skipped.
       - name: Unit and integration tests
         run: npm run test -- --reporter=default --reporter=json --outputFile=vitest-results.json
 
@@ -66,9 +67,6 @@ jobs:
               sys.exit(1)
           print("No skipped tests.")
           PY
-
-      - name: RBAC / RLS verification against PostgREST
-        run: npm run verify:rbac
 
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium

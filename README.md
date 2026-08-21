@@ -266,11 +266,11 @@ npm run verify        # typecheck + unit + RLS + end-to-end
 
 | Command | What it proves |
 |---|---|
-| `npm test` | Pure policy logic with no server or browser — the role-escalation matrix, permission scoping, slug derivation, email fallback — plus a cross-tenant RLS suite hit through PostgREST with real tokens. 50 tests. |
-| `npm run verify:rbac` | RLS, tenant isolation and the JWT hook, with **the app not running at all**. 19 checks. |
+| `npm test` | Two things in one runner. Pure policy logic with no server or browser — the role-escalation matrix, permission scoping, slug derivation, the env schema, the email fallback. And RLS, tenant isolation and the JWT hook asserted straight against PostgREST with **the application not running at all**. |
 | `npm run test:e2e` | The app in a real browser: role-aware UI, the onboarding loop, hydration, and calling RPC endpoints directly to bypass every route guard. 21 tests. |
 
-Prerequisite for everything except `npm test`: the local stack, via `npm run db:start`.
+Prerequisite for the database half and for e2e: the local stack, via `npm run db:start`.
+The pure-logic tests need nothing.
 
 ### On skipped tests
 
@@ -287,9 +287,10 @@ The end-to-end suite uses `@playwright/test`. It replaced two hand-rolled Chrome
 DevTools Protocol drivers (`scripts/verify-app.mjs`, `scripts/verify-ssr.mjs`,
 ~400 lines) whose assertions were substring matches against raw HTML; the
 Playwright versions query the accessibility tree, so they express intent and
-survive markup changes. `verify-rbac.mjs` is deliberately kept — asserting
-against PostgREST with the application switched off is a claim no browser test
-can make.
+survive markup changes. The claim that made the old `verify-rbac.mjs` worth keeping — asserting against
+PostgREST with the application switched off — now lives in
+`src/server/rls.integration.test.ts` instead, so there is one reporting surface
+and the skip gate covers it.
 
 Playwright's bundled Chromium builds are generic Linux binaries and will not
 start on NixOS. Point it at a system browser instead:

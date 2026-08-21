@@ -11,8 +11,17 @@ import { describe, expect, it } from "vitest";
  * that would catch that, so they talk to PostgREST exactly as the browser does,
  * with a real user's access token and no application code in the path.
  *
+ * This absorbed scripts/verify-rbac.mjs, which made the same claims from a plain
+ * node script. The property that made it worth keeping for a while — and worth
+ * stating here now that the script is gone — is that **the application is not
+ * running**. Nothing below imports app code, starts a server, or renders
+ * anything: every assertion is about what the database itself refuses when
+ * handed a real user's token. If these pass, the app layer could be bypassed
+ * entirely and the data would still hold.
+ *
  * Skipped automatically when the local stack is down, so `npm run test` still
- * works on a machine with nothing running. CI starts the stack first.
+ * works on a machine with nothing running. CI starts the stack first and fails
+ * the build if anything here was skipped.
  */
 
 const PASSWORD = "password123";
@@ -33,14 +42,30 @@ function stackStatus(): { api: string; key: string } | null {
   }
 }
 
-async function signIn(email: string): Promise<string> {
+interface OrgClaim {
+  id: string;
+  slug: string;
+  role: string;
+}
+
+async function signIn(email: string): Promise<{ token: string; orgs: OrgClaim[] }> {
   const res = await fetch(`${API}/auth/v1/token?grant_type=password`, {
     method: "POST",
     headers: { apikey: KEY, "content-type": "application/json" },
     body: JSON.stringify({ email, password: PASSWORD }),
   });
   if (!res.ok) throw new Error(`sign-in failed for ${email}: ${res.status}`);
-  return (await res.json()).access_token;
+
+  const accessToken: string = (await res.json()).access_token;
+
+  // Decoding rather than verifying: the assertion is about what
+  // custom_access_token_hook stamped into the payload, and GoTrue having just
+  // issued it is signature enough for a test.
+  const payload = JSON.parse(
+    Buffer.from(accessToken.split(".")[1]!, "base64url").toString(),
+  ) as { orgs?: OrgClaim[] };
+
+  return { token: accessToken, orgs: payload.orgs ?? [] };
 }
 
 /** Issues a PostgREST request as `token`, i.e. subject to that user's RLS. */
@@ -67,14 +92,25 @@ async function asUser(
   return { status: res.status, body };
 }
 
-const tokens: Record<string, string> = {};
+const sessions: Record<string, { token: string; orgs: OrgClaim[] }> = {};
 
-/** Non-optional accessor — a missing token is a harness bug, not a test case. */
-function token(email: string): string {
-  const t = tokens[email];
-  if (!t) throw new Error(`no access token for ${email}`);
-  return t;
+/** Non-optional accessor — a missing session is a harness bug, not a test case. */
+function session(email: string): { token: string; orgs: OrgClaim[] } {
+  const s = sessions[email];
+  if (!s) throw new Error(`no session for ${email}`);
+  return s;
 }
+
+function token(email: string): string {
+  return session(email).token;
+}
+
+/** Seeded fixture ids, from supabase/seed.sql. */
+const ACME = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+const PROJ_WEB = "cccccccc-cccc-cccc-cccc-cccccccccccc";
+const PROJ_API = "dddddddd-dddd-dddd-dddd-dddddddddddd";
+const MEMBER_ID = "33333333-3333-3333-3333-333333333333";
+const ACME_PROJECTS = 2;
 
 /**
  * Resolved at module load rather than in beforeAll, so `describe.skipIf` below
@@ -91,8 +127,14 @@ if (status) {
   API = status.api;
   KEY = status.key;
   try {
-    for (const email of ["owner@acme.test", "viewer@acme.test", "outsider@globex.test"]) {
-      tokens[email] = await signIn(email);
+    for (const email of [
+      "owner@acme.test",
+      "admin@acme.test",
+      "member@acme.test",
+      "viewer@acme.test",
+      "outsider@globex.test",
+    ]) {
+      sessions[email] = await signIn(email);
     }
     stackUp = true;
   } catch {
@@ -178,5 +220,104 @@ describe.skipIf(!stackUp)("cross-tenant isolation", () => {
     });
     expect(status).toBeGreaterThanOrEqual(400);
     expect(JSON.stringify(body)).toContain("invitation_invalid");
+  });
+});
+
+describe.skipIf(!stackUp)("JWT claims from custom_access_token_hook", () => {
+  it("stamps an orgs claim naming the user's memberships", () => {
+    const orgs = session("owner@acme.test").orgs;
+    expect(orgs).toHaveLength(1);
+    expect(orgs[0]).toMatchObject({ slug: "acme", role: "owner" });
+  });
+
+  it("reports the caller's real role, not a privileged one", () => {
+    expect(session("viewer@acme.test").orgs[0]).toMatchObject({ slug: "acme", role: "viewer" });
+  });
+
+  it("never mentions a tenant the user does not belong to", () => {
+    const orgs = session("outsider@globex.test").orgs;
+    expect(orgs).toHaveLength(1);
+    expect(orgs[0]?.slug).toBe("globex");
+  });
+
+  it("carries membership edges but not a resolved permission set", () => {
+    // Permissions are deliberately excluded so a change to role_permissions does
+    // not leave every outstanding token carrying a stale copy of it.
+    expect(JSON.stringify(session("owner@acme.test").orgs)).not.toMatch(/permission/i);
+  });
+});
+
+describe.skipIf(!stackUp)("permission enforcement per role", () => {
+  it("a viewer can read projects", async () => {
+    const { body } = await asUser(token("viewer@acme.test"), "projects?select=id");
+    expect(body).toHaveLength(ACME_PROJECTS);
+  });
+
+  it("a viewer cannot create an issue", async () => {
+    const { status } = await asUser(token("viewer@acme.test"), "issues", {
+      method: "POST",
+      body: JSON.stringify({ org_id: ACME, project_id: PROJ_WEB, title: "nope" }),
+    });
+    expect(status).toBe(403);
+  });
+
+  it("a member can create an issue, and its number is assigned per project", async () => {
+    const { status, body } = await asUser(token("member@acme.test"), "issues", {
+      method: "POST",
+      headers: { prefer: "return=representation" },
+      body: JSON.stringify({ org_id: ACME, project_id: PROJ_WEB, title: "member writes" }),
+    });
+    expect(status).toBe(201);
+    expect((body as { number: number }[])[0]!.number).toBeGreaterThan(0);
+  });
+
+  it("a member cannot delete a project", async () => {
+    // RLS turns an unauthorized DELETE into "no rows matched" rather than an
+    // error, so the row still existing is the real assertion — the status code
+    // alone would pass even if the delete had succeeded.
+    await asUser(token("member@acme.test"), `projects?id=eq.${PROJ_API}`, { method: "DELETE" });
+
+    const { body } = await asUser(
+      token("admin@acme.test"),
+      `projects?select=id&id=eq.${PROJ_API}`,
+    );
+    expect(body).toHaveLength(1);
+  });
+
+  it("an admin can read the audit log", async () => {
+    const { body } = await asUser(token("admin@acme.test"), "audit_log?select=id");
+    expect((body as unknown[]).length).toBeGreaterThan(0);
+  });
+});
+
+describe.skipIf(!stackUp)("database-enforced invariants", () => {
+  it("the last owner cannot be removed", async () => {
+    const { body } = await asUser(
+      token("owner@acme.test"),
+      `memberships?select=id&org_id=eq.${ACME}&role=eq.owner`,
+    );
+    const membershipId = (body as { id: string }[])[0]!.id;
+
+    const { status } = await asUser(
+      token("owner@acme.test"),
+      `memberships?id=eq.${membershipId}`,
+      { method: "DELETE" },
+    );
+    expect(status).toBeGreaterThanOrEqual(400);
+  });
+
+  it("a member cannot promote themselves to owner", async () => {
+    await asUser(token("member@acme.test"), `memberships?user_id=eq.${MEMBER_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({ role: "owner" }),
+    });
+
+    // Read back with a role that can see it: the PATCH status is not the
+    // assertion, the resulting role is.
+    const { body } = await asUser(
+      token("admin@acme.test"),
+      `memberships?select=role&user_id=eq.${MEMBER_ID}`,
+    );
+    expect((body as { role: string }[])[0]!.role).toBe("member");
   });
 });

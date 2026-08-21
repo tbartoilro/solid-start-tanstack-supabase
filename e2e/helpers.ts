@@ -38,6 +38,15 @@ export async function signOut(page: Page): Promise<void> {
  */
 export async function navLinks(page: Page): Promise<string[]> {
   const links = page.getByRole("navigation").getByRole("link");
+
+  // allInnerTexts() does NOT auto-wait — it reads whatever is in the DOM right
+  // now and happily returns [] if the nav has not rendered yet. That passed
+  // locally and failed in CI, where the first hit on a route pays for a dev-mode
+  // SSR compile. Waiting for one link first is what makes the read meaningful;
+  // an empty array would otherwise satisfy `not.toContain("Settings")` and let a
+  // genuine permission regression through.
+  await expect(links.first()).toBeVisible();
+
   return (await links.allInnerTexts()).map((t) => t.trim());
 }
 
