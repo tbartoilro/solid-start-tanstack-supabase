@@ -42,6 +42,10 @@ Seeded accounts, all with password `password123`:
 Globex exists so tenant isolation is testable: nothing an Acme user does should
 ever reach it.
 
+The seeded accounts are a convenience, not the only way in — `/signup` creates a
+real account, and `/new-org` makes the creator an owner of a fresh tenant. See
+**Onboarding** below.
+
 ---
 
 ## The architecture, in one page
@@ -169,6 +173,50 @@ it is a trigger, not service code:
 - **Permissions are read from `role_permissions`**, never mirrored in TypeScript,
   so the UI cannot disagree with the database about what a role may do.
 
+### Onboarding, end to end
+
+The lifecycle a multi-tenant app is useless without, and the order it runs in:
+
+```
+/signup  ->  /select-org  ->  /new-org  ->  /$orgSlug
+                    ^                            |
+                    |                     invite a member
+              /accept-invite  <-- emailed link --+
+```
+
+Four pieces worth knowing about:
+
+**Creating an organization does not use `INSERT ... RETURNING`.** PostgREST turns
+`.select()` on an insert into `RETURNING`, and `RETURNING` output is subject to
+the *read* policy — which requires a membership. The membership is created by the
+`organizations_add_owner` AFTER INSERT trigger, which has not fired when
+`RETURNING` is evaluated, so the whole statement is refused. `createOrg` inserts
+bare and reads the row back in a second statement, by which point the trigger has
+run. No policy is weakened to make this work.
+
+**Joining an organization forces a token refresh.** The `orgs` claim is minted by
+`custom_access_token_hook` when a token is issued, so the instant after a
+membership is created the caller's token does not mention it — and `requireOrg`
+resolves the tenant from that claim, so the user would be bounced from the
+organization they just joined. `refreshClaims()` in `src/server/refresh-claims.ts`
+re-mints the token; the client then drops its cached session, because
+invalidating it is not enough (see the comment in `src/routes/login.tsx`).
+
+**Accepting an invitation is a database function.** `public.accept_invitation`
+inserts the membership and stamps `accepted_at` in one transaction — as two
+PostgREST calls a double-submit can insert twice — and it verifies the caller's
+own email against the invited address. A token proves *someone* was invited, not
+that this caller is the invitee, so without that check a forwarded link is an
+open door. Every rejection raises the same opaque error, so the endpoint cannot
+be used to distinguish "expired" from "already used" from "never existed".
+
+**Mail failures never fail the write.** An invitation row is the source of truth;
+the email is a notification about it. `sendEmail` returns a result instead of
+throwing, so a bounced message cannot make a committed invitation look like it
+failed. With no `RESEND_API_KEY` configured the message — including the accept
+link — is logged instead, so the whole flow is exercisable on a fresh clone with
+no vendor account.
+
 ### Hardening
 
 - **Structured, request-scoped logging** (`src/server/log.ts`) — every line
@@ -196,8 +244,14 @@ npm run build
 SUPABASE_SECRET_KEY=... NODE_ENV=production PORT=3000 node .output/server/index.mjs
 ```
 
-Env validation runs at module load, so a missing variable fails loudly on
-startup rather than surfacing later as a confusing runtime error.
+Env validation runs at module load and throws on anything missing. Note what
+that does *not* mean: Nitro loads route handlers lazily, so a container with no
+`SUPABASE_SECRET_KEY` starts successfully and only fails when a request reaches
+a module that needs it.
+
+`/api/health` therefore imports `src/server/env.ts` for its side effect, which
+turns it into a readiness check — gate your deployment on it and a
+misconfigured release fails fast instead of going green and then serving 500s.
 
 Output is a Nitro build, so the usual presets (Node, Vercel, Cloudflare,
 Netlify) apply via Nitro configuration.
@@ -207,26 +261,91 @@ Netlify) apply via Nitro configuration.
 ## Verification
 
 ```bash
-npm run verify        # typecheck + all three suites
+npm run verify        # typecheck + unit + RLS + end-to-end
 ```
 
 | Command | What it proves |
 |---|---|
-| `npm test` | Pure policy logic with no server or database: the full role-escalation matrix and per-org permission scoping. 28 tests. |
-| `npm run verify:rbac` | RLS, tenant isolation and the JWT hook, hit through PostgREST with real tokens and **the app not running**. 19 checks. |
-| `npm run verify:ssr` | Authenticated loader data is in the server's bytes, hydration refetches nothing, client nav does not reload. 7 checks. |
-| `npm run verify:app` | The app end-to-end, including calling RPC endpoints directly to bypass every route guard. 19 checks. |
+| `npm test` | Pure policy logic with no server or browser — the role-escalation matrix, permission scoping, slug derivation, email fallback — plus a cross-tenant RLS suite hit through PostgREST with real tokens. 50 tests. |
+| `npm run verify:rbac` | RLS, tenant isolation and the JWT hook, with **the app not running at all**. 19 checks. |
+| `npm run test:e2e` | The app in a real browser: role-aware UI, the onboarding loop, hydration, and calling RPC endpoints directly to bypass every route guard. 21 tests. |
 
-The two browser suites need headless Chromium with a debug port:
+Prerequisite for everything except `npm test`: the local stack, via `npm run db:start`.
+
+### On skipped tests
+
+The RLS suite in `src/server/rls.integration.test.ts` skips itself when the
+local stack is unreachable, so `npm test` still works on a machine with nothing
+running. That is a real hazard — a test that silently passes without executing
+is worse than no test — so it reports as *skipped* rather than passed, and CI
+fails the build if anything was skipped. If you see skips locally, the database
+is down, not fine.
+
+### Browser setup
+
+The end-to-end suite uses `@playwright/test`. It replaced two hand-rolled Chrome
+DevTools Protocol drivers (`scripts/verify-app.mjs`, `scripts/verify-ssr.mjs`,
+~400 lines) whose assertions were substring matches against raw HTML; the
+Playwright versions query the accessibility tree, so they express intent and
+survive markup changes. `verify-rbac.mjs` is deliberately kept — asserting
+against PostgREST with the application switched off is a claim no browser test
+can make.
+
+Playwright's bundled Chromium builds are generic Linux binaries and will not
+start on NixOS. Point it at a system browser instead:
 
 ```bash
-chromium --headless=new --remote-debugging-port=9222 &
+CHROMIUM_PATH=/run/current-system/sw/bin/chromium npm run test:e2e
 ```
 
+`shell.nix` provides a pinned Chromium for exactly this.
+
+Note that `src/server/rpc/auth.ts` rate-limits sign-in to 5 attempts per address
+per 15 minutes. The suite therefore authenticates each role **once** and replays
+the session (`e2e/auth.setup.ts`); a suite that logged in per test would throttle
+itself and fail with spurious redirects to `/login`.
+
 > **If a suite fails oddly, check for orphaned dev servers first.** Vite silently
-> moves to the next free port when 4321 is taken, so a stale process will happily
+> moves to the next free port when one is taken, so a stale process will happily
 > serve your tests a previous build:
 > `ps -eo pid,args | grep "[v]ite dev"`
+
+---
+
+## What is deliberately not here
+
+A starting point earns trust by being explicit about its edges. These are
+omissions by decision, not oversight:
+
+**Billing.** No payment provider is wired in, because committing a template to
+one is the fastest way to make it useless to anyone who prefers another. What is
+provided is the seam:
+
+- `org.billing` exists in the `app_permission` enum, granted to `owner` only, so
+  a billing UI has something to gate on from the first commit.
+- A `subscriptions` table keyed on `organizations` is the natural attachment
+  point; `organizations` already carries the tenant identity everything else
+  hangs off.
+- Seat enforcement belongs in `inviteMember` (`src/server/services/members.ts`),
+  before the invitation row is inserted — that is the single choke point through
+  which a tenant gains members.
+- Plan-level feature gating belongs in the `authorize()` chain in
+  `src/server/guard.ts`, alongside the permission check, so it cannot be
+  forgotten per-endpoint.
+
+**Hard deletes.** `organizations` cascades on delete. That is a reasonable
+default for a demo and a poor one for a paying customer: there is no undo and no
+retention window. A production deployment should add `deleted_at`, filter it in
+the read policies, and move the cascade to a scheduled purge.
+
+**Also absent, on purpose:** realtime subscriptions, i18n, a cross-tenant
+superadmin surface, and file storage. Each is a real decision with real
+trade-offs, and guessing wrong on a consumer's behalf is worse than leaving the
+space empty.
+
+Data export *is* here — `exportOrganization` in `src/server/rpc/org.ts`, gated on
+`org.export` — because a GDPR access request needs a better answer than "an
+engineer runs a query".
 
 ---
 

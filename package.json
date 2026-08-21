@@ -15,12 +15,11 @@
     "db:reset": "supabase db reset",
     "db:types": "supabase gen types typescript --local > src/lib/database.types.ts",
     "verify:rbac": "node scripts/verify-rbac.mjs",
-    "verify:ssr": "node scripts/verify-ssr.mjs",
-    "verify:app": "node scripts/verify-app.mjs",
-    "verify": "npm run typecheck && npm run test && npm run verify:rbac && npm run verify:ssr && npm run verify:app",
+    "verify": "npm run typecheck && npm run test && npm run verify:rbac && npm run test:e2e",
     "prepare": "panda codegen",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@ark-ui/solid": "^5.38.2",
@@ -38,6 +37,7 @@
   },
   "devDependencies": {
     "@pandacss/dev": "^1.12.0",
+    "@playwright/test": "^1.62.1",
     "@tanstack/router-plugin": "^1.168.34",
     "@types/node": "^26.2.0",
     "typescript": "^5.5.3",

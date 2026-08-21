@@ -4,6 +4,13 @@ import { nitro } from "nitro/vite";
 import { defineConfig } from "vite";
 
 export default defineConfig({
+  // Pinned so the port is a fact rather than whatever was free. It is also the
+  // default PUBLIC_APP_URL in src/server/env.ts, which is what makes invite
+  // links generated in development actually resolve.
+  //
+  // The e2e suite deliberately uses a different port (see playwright.config.ts)
+  // so a hand-run dev server and a test run cannot collide.
+  server: { port: 4321 },
   plugins: [
     solidStart({
       // SolidStart's own filesystem router is pointed at `src/api` so that it only
