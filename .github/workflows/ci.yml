@@ -40,14 +40,45 @@ jobs:
       # not valid". Asking the stack removes the whole class of problem.
       - name: Provide local environment
         run: |
+          set -euo pipefail
           eval "$(supabase status -o env)"
+
+          # SERVICE_ROLE_KEY first, SECRET_KEY as fallback. The newer key format
+          # is not always wired to the service_role Postgres role depending on
+          # CLI version, which surfaced as "permission denied for table
+          # invitations" from the admin client — sixty seconds later, as an
+          # unrelated-looking e2e failure.
+          ADMIN_KEY="${SERVICE_ROLE_KEY:-${SECRET_KEY:-}}"
+          if [ -z "$ADMIN_KEY" ]; then
+            echo "::error::supabase status reported neither SERVICE_ROLE_KEY nor SECRET_KEY"
+            exit 1
+          fi
+
           cat > .env <<EOF
           VITE_SUPABASE_URL=$API_URL
           VITE_SUPABASE_PUBLISHABLE_KEY=$PUBLISHABLE_KEY
-          SUPABASE_SECRET_KEY=$SECRET_KEY
+          SUPABASE_SECRET_KEY=$ADMIN_KEY
           PUBLIC_APP_URL=http://127.0.0.1:3010
           EOF
           echo "Wrote .env for API $API_URL"
+
+      # Asserts the assumption the previous step just made, instead of letting a
+      # wrong key show up much later as a confusing test failure. createAdminClient
+      # is expected to bypass RLS; if this key cannot read a protected table, it
+      # is not a service key and nothing downstream will work.
+      - name: Verify the admin key really bypasses RLS
+        run: |
+          set -euo pipefail
+          eval "$(supabase status -o env)"
+          ADMIN_KEY="${SERVICE_ROLE_KEY:-${SECRET_KEY:-}}"
+          status=$(curl -s -o /dev/null -w '%{http_code}' \
+            "$API_URL/rest/v1/invitations?select=email&limit=1" \
+            -H "apikey: $ADMIN_KEY" -H "authorization: Bearer $ADMIN_KEY")
+          echo "invitations read with admin key -> HTTP $status"
+          if [ "$status" != "200" ]; then
+            echo "::error::The admin key does not bypass RLS (HTTP $status). createAdminClient will fail."
+            exit 1
+          fi
 
       - name: Typecheck
         run: npm run typecheck
