@@ -1,5 +1,6 @@
 import { createFileRoute, Link, redirect } from "@tanstack/solid-router";
 import { For } from "solid-js";
+import { SignOutButton } from "~/components/SignOutButton";
 
 export const Route = createFileRoute("/select-org")({
   beforeLoad: ({ context }) => {
@@ -37,6 +38,11 @@ function SelectOrg() {
 
         <p class="hint">
           Starting something new? <Link to="/new-org">Create an organization</Link>.
+        </p>
+
+        <p class="hint">
+          <Link to="/account">Your account</Link> &middot;{" "}
+          <SignOutButton class="link-button" />
         </p>
       </div>
     </main>

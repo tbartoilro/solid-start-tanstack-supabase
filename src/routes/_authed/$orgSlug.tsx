@@ -1,8 +1,9 @@
 import { useQueryClient } from "@tanstack/solid-query";
 import { createFileRoute, Link, notFound, Outlet, useRouter } from "@tanstack/solid-router";
 import { For, Show } from "solid-js";
+import { SignOutButton } from "~/components/SignOutButton";
 import { can, type SessionOrg } from "~/lib/auth";
-import { setActiveOrg, signOut } from "~/server/rpc/auth";
+import { setActiveOrg } from "~/server/rpc/auth";
 
 /**
  * Tenant scope for everything beneath it.
@@ -34,16 +35,6 @@ function OrgLayout() {
     queryClient.removeQueries({ queryKey: ["session"] });
     await router.invalidate();
     router.navigate({ to: "/$orgSlug", params: { orgSlug: slug } });
-  }
-
-  async function onSignOut() {
-    await signOut();
-    // Everything cached was fetched as the previous user; clearing outright is
-    // the only safe option, since a stale entry would leak their data into the
-    // next session on this device.
-    queryClient.clear();
-    await router.invalidate();
-    router.navigate({ to: "/login" });
   }
 
   return (
@@ -112,9 +103,7 @@ function OrgLayout() {
           <div class="user-name">{session.user.fullName ?? session.user.email}</div>
           <div class="user-email">{session.user.email}</div>
           <Link to="/account">Account</Link>
-          <button type="button" class="link-button" onClick={onSignOut}>
-            Sign out
-          </button>
+          <SignOutButton class="link-button" />
         </div>
       </aside>
 

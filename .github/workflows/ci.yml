@@ -26,19 +26,28 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # The committed .env.example holds the Supabase CLI's fixed local-dev
-      # defaults, identical on every machine, so it doubles as the CI config.
-      # src/lib/env.ts validates at module load, so the unit suite needs this
-      # file to exist before anything imports it.
-      - name: Provide local environment
-        run: cp .env.example .env
-
       - uses: supabase/setup-cli@v1
         with:
           version: latest
 
       - name: Start Supabase
         run: supabase start
+
+      # Derived from the running stack rather than copied from .env.example.
+      # The committed defaults are correct for the CLI version this repo was
+      # developed against, and this job installs `latest` — trusting them cost a
+      # debugging cycle where a mismatched service key surfaced as "invitation
+      # not valid". Asking the stack removes the whole class of problem.
+      - name: Provide local environment
+        run: |
+          eval "$(supabase status -o env)"
+          cat > .env <<EOF
+          VITE_SUPABASE_URL=$API_URL
+          VITE_SUPABASE_PUBLISHABLE_KEY=$PUBLISHABLE_KEY
+          SUPABASE_SECRET_KEY=$SECRET_KEY
+          PUBLIC_APP_URL=http://127.0.0.1:3010
+          EOF
+          echo "Wrote .env for API $API_URL"
 
       - name: Typecheck
         run: npm run typecheck

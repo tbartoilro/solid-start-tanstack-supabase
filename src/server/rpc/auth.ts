@@ -175,7 +175,12 @@ export async function requestPasswordReset(input: unknown): Promise<{ ok: true }
   enforceRateLimit({ name: "password-reset", subject: email, limit: 5, windowMs: 60 * 60_000 });
 
   const { error } = await event().locals.supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: appUrl("/reset-password"),
+    // Points at the PKCE exchange, not straight at /reset-password. GoTrue's
+    // link carries an authorization code, not a session; src/api/auth/callback.ts
+    // trades it for cookies and then forwards here. Sending the user directly to
+    // /reset-password gives them a page with no session and a misleading
+    // "link is no longer valid".
+    redirectTo: appUrl("/auth/callback?next=/reset-password"),
   });
 
   if (error) {

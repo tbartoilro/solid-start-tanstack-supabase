@@ -249,9 +249,16 @@ that does *not* mean: Nitro loads route handlers lazily, so a container with no
 `SUPABASE_SECRET_KEY` starts successfully and only fails when a request reaches
 a module that needs it.
 
-`/api/health` therefore imports `src/server/env.ts` for its side effect, which
-turns it into a readiness check — gate your deployment on it and a
-misconfigured release fails fast instead of going green and then serving 500s.
+`/health` therefore imports `src/server/env.ts` for its side effect, which turns
+it into a readiness check — gate your deployment on it and a misconfigured
+release fails fast instead of going green and then serving 500s.
+
+Note the path. `routeDir: "./api"` in `vite.config.ts` makes `src/api` the route
+*root* for SolidStart's filesystem router, so `src/api/health.ts` is served at
+`/health` and `src/api/auth/callback.ts` at `/auth/callback` — there is no `/api`
+prefix. Requesting `/api/health` hits TanStack Router instead and renders the
+not-found page with a 200, which is exactly the sort of health check that reports
+success forever.
 
 Output is a Nitro build, so the usual presets (Node, Vercel, Cloudflare,
 Netlify) apply via Nitro configuration.

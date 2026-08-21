@@ -1,7 +1,9 @@
 "use server";
 
 import { z } from "zod";
+import { isAppError } from "../errors";
 import { authenticated } from "../guard";
+import { log } from "../log";
 import { enforceRateLimit } from "../rate-limit";
 import { refreshClaims } from "../refresh-claims";
 import * as invitations from "../services/invitations";
@@ -41,8 +43,19 @@ export async function previewInvitation(input: unknown) {
 
   try {
     return await invitations.previewInvitation(parsed.data.token);
-  } catch {
-    return null;
+  } catch (error) {
+    // A token that is unknown, spent or expired is a null result, not an
+    // incident — previewInvitation raises not_found for all three, and telling
+    // them apart would make this an oracle.
+    if (isAppError(error) && error.code === "not_found") return null;
+
+    // Anything else is infrastructure: a bad service key, an unreachable
+    // database. Swallowing those made a misconfiguration indistinguishable from
+    // an expired link, and cost a CI debugging cycle proving exactly that.
+    log.error("previewInvitation failed for a reason unrelated to the token", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
   }
 }
 

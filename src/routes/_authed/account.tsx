@@ -1,5 +1,6 @@
 import { useQueryClient } from "@tanstack/solid-query";
 import { createFileRoute, Link, useRouter } from "@tanstack/solid-router";
+import { SignOutButton } from "~/components/SignOutButton";
 import { createSignal, Show } from "solid-js";
 import { updatePassword } from "~/server/rpc/auth";
 import { changeEmail, reconcileEmail, updateProfile } from "~/server/rpc/profile";
@@ -89,7 +90,8 @@ function AccountPage() {
       <div class="page-header">
         <h1>Your account</h1>
         {/* /account sits outside the $orgSlug shell, so it has no sidebar. */}
-        <Link to="/select-org">Back to organizations</Link>
+        <Link to="/select-org">Back to organizations</Link> &middot;{" "}
+        <SignOutButton class="link-button" />
       </div>
 
       <section class="card">

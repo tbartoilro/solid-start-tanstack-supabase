@@ -151,11 +151,24 @@ max_indexes = 5
 enabled = true
 # The base URL of your website. Used as an allow-list for redirects and for constructing URLs used
 # in emails.
-site_url = "http://127.0.0.1:3000"
+# Must match the dev server (see `server.port` in vite.config.ts). GoTrue uses
+# this both to build links in auth email and as the fallback when a requested
+# redirect is not allow-listed below — which is how a wrong value here turns
+# into a password-reset link that lands on a port nothing serves.
+site_url = "http://localhost:4321"
 # The public URL that Auth serves on. Defaults to the API external URL with `/auth/v1` appended.
 # external_url = ""
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-additional_redirect_urls = ["https://127.0.0.1:3000"]
+# Globs rather than exact URLs so /reset-password and friends are covered.
+# 3010 is the port the Playwright suite runs its own dev server on.
+# A deployment must add its public URL here (or in Authentication -> URL
+# Configuration on a hosted project) or recovery links will silently fall
+# back to site_url.
+additional_redirect_urls = [
+  "http://localhost:4321/**",
+  "http://127.0.0.1:4321/**",
+  "http://127.0.0.1:3010/**",
+]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
 # JWT issuer URL. If not set, defaults to auth.external_url.
