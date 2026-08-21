@@ -1,5 +1,6 @@
 import type { AppRole } from "~/lib/auth";
 import type { OrgContext } from "../context";
+import { appUrl, sendEmail } from "../email";
 import { conflict, forbidden, notFound } from "../errors";
 
 /**
@@ -165,10 +166,24 @@ export async function listInvitations(ctx: OrgContext): Promise<InvitationRow[]>
   }));
 }
 
+export interface InviteResult {
+  id: string;
+  /**
+   * The redemption link, returned to the inviter so the UI can offer a
+   * copy-to-clipboard fallback when mail is not configured or bounces.
+   *
+   * Handing the token back to whoever created the invitation is not an
+   * escalation: public.accept_invitation() will only redeem it for a caller
+   * whose own email matches the invited address.
+   */
+  acceptUrl: string;
+  emailDelivered: boolean;
+}
+
 export async function inviteMember(
   ctx: OrgContext,
   input: { email: string; role: AppRole },
-): Promise<{ id: string }> {
+): Promise<InviteResult> {
   assertCanAssignRole(ctx.role, input.role);
 
   const email = input.email.trim().toLowerCase();
@@ -176,7 +191,7 @@ export async function inviteMember(
   const { data, error } = await ctx.db
     .from("invitations")
     .insert({ org_id: ctx.orgId, email, role: input.role, invited_by: ctx.userId })
-    .select("id")
+    .select("id, token")
     .single();
 
   if (error) {
@@ -184,7 +199,21 @@ export async function inviteMember(
     throw new Error(`inviteMember: ${error.message}`);
   }
 
-  return { id: data.id };
+  const acceptUrl = appUrl(`/accept-invite?token=${data.token}`);
+
+  // The invitation row is the source of truth; mail is a notification about it.
+  // sendEmail never throws for exactly this reason — a delivery failure must not
+  // roll back, or appear to roll back, an invitation that already exists.
+  const delivery = await sendEmail({
+    to: email,
+    subject: `You have been invited to join ${ctx.orgSlug}`,
+    text:
+      `You have been invited to join ${ctx.orgSlug} as ${input.role}.\n\n` +
+      `Open this link to accept:\n${acceptUrl}\n\n` +
+      `The invitation expires in 7 days. If you were not expecting it, ignore this message.`,
+  });
+
+  return { id: data.id, acceptUrl, emailDelivered: delivery.delivered };
 }
 
 export async function revokeInvitation(ctx: OrgContext, invitationId: string): Promise<void> {

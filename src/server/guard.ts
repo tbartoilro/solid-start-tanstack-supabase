@@ -1,6 +1,12 @@
 import { z } from "zod";
 import type { AppPermission } from "~/lib/auth";
-import { requireOrg, requirePermission, type OrgContext } from "./context";
+import {
+  requireAuth,
+  requireOrg,
+  requirePermission,
+  type AuthContext,
+  type OrgContext,
+} from "./context";
 import { invalidInput } from "./errors";
 
 /**
@@ -33,6 +39,30 @@ export async function authorize<S extends z.ZodType<{ orgSlug: string }>>(
   await requirePermission(ctx, permission);
 
   return { input: parsed.data, ctx };
+}
+
+/**
+ * The same discipline for calls that are authenticated but not tenant-scoped.
+ *
+ * Creating an organization and accepting an invitation both happen *before* the
+ * caller is a member of anything, so `authorize` cannot apply: there is no org
+ * to scope to and no permission to check. What still applies is that the input
+ * is validated before any handler sees it, and that an anonymous caller is
+ * turned away here rather than deeper in.
+ *
+ * Anything tenant-scoped must use `authorize` instead — this deliberately
+ * performs no permission check at all.
+ */
+export async function authenticated<S extends z.ZodType>(
+  schema: S,
+  raw: unknown,
+): Promise<{ input: z.output<S>; ctx: AuthContext }> {
+  const parsed = schema.safeParse(raw);
+  if (!parsed.success) {
+    throw invalidInput("Check the submitted values.", z.flattenError(parsed.error));
+  }
+
+  return { input: parsed.data, ctx: requireAuth() };
 }
 
 /** Shared shape: every tenant-scoped call names the tenant it acts on. */

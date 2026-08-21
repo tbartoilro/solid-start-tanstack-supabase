@@ -6,6 +6,7 @@ import { z } from "zod";
 import type { AppPermission, AppRole, Session, SessionOrg } from "~/lib/auth";
 import { isProduction } from "~/lib/env";
 import { requireAuth } from "~/server/context";
+import { appUrl } from "~/server/email";
 import { conflict, invalidInput, unauthenticated } from "~/server/errors";
 import { ACTIVE_ORG_COOKIE, baseCookieOptions } from "~/server/cookies";
 import { log } from "~/server/log";
@@ -146,6 +147,72 @@ export async function signUpWithPassword(input: unknown): Promise<{ ok: true; ne
   }
 
   return { ok: true, needsConfirmation: !data.session };
+}
+
+const resetRequestSchema = z.object({
+  email: z.email("Enter a valid email address."),
+});
+
+/**
+ * Starts a password reset.
+ *
+ * Always reports success, whatever happened. Reporting "no such account" here
+ * would turn this endpoint into a membership oracle for any address someone
+ * cares to try. Rate-limited per address for the same reason invites are: it
+ * sends mail to an arbitrary recipient.
+ *
+ * Delivery is Supabase's own auth mailer rather than src/server/email.ts,
+ * because the recovery link has to be minted by GoTrue.
+ */
+export async function requestPasswordReset(input: unknown): Promise<{ ok: true }> {
+  const parsed = resetRequestSchema.safeParse(input);
+  if (!parsed.success) {
+    throw invalidInput("Enter a valid email address.", z.flattenError(parsed.error));
+  }
+
+  const email = parsed.data.email.trim().toLowerCase();
+
+  enforceRateLimit({ name: "password-reset", subject: email, limit: 5, windowMs: 60 * 60_000 });
+
+  const { error } = await event().locals.supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: appUrl("/reset-password"),
+  });
+
+  if (error) {
+    // Logged, not surfaced: the caller learns nothing either way, by design.
+    log.warn("password reset request failed", { error: error.message });
+  }
+
+  return { ok: true as const };
+}
+
+const updatePasswordSchema = z.object({
+  password: z.string().min(8, "Password must be at least 8 characters."),
+});
+
+/**
+ * Sets a new password for the caller.
+ *
+ * Requires an authenticated session, which is what the recovery link
+ * establishes when the user lands on /reset-password — so this same endpoint
+ * serves both "I forgot it" and "I want to change it".
+ */
+export async function updatePassword(input: unknown): Promise<{ ok: true }> {
+  const parsed = updatePasswordSchema.safeParse(input);
+  if (!parsed.success) {
+    throw invalidInput("Check the submitted values.", z.flattenError(parsed.error));
+  }
+
+  // Establishes that there is a session at all before touching credentials.
+  requireAuth();
+
+  const { error } = await event().locals.supabase.auth.updateUser({
+    password: parsed.data.password,
+  });
+
+  if (error) throw conflict(error.message);
+
+  return { ok: true as const };
 }
 
 export async function signOut(): Promise<{ ok: true }> {
