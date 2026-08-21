@@ -17,5 +17,15 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["src/**/*.test.ts"],
+    env: {
+      // services/members.ts imports src/server/email.ts, which imports the
+      // server env schema — and that schema validates at module load, on
+      // purpose, so a missing variable fails at boot rather than mid-request.
+      // Importing it from a test therefore needs the variable to exist. These
+      // tests still reach no network and no database; this only satisfies the
+      // boot check. The VITE_* half comes from .env, which is why CI has to
+      // `cp .env.example .env` before running the suite.
+      SUPABASE_SECRET_KEY: "test-only-never-used",
+    },
   },
 });
