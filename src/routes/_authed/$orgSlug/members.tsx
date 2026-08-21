@@ -35,6 +35,15 @@ function MembersPage() {
   const [inviteRole, setInviteRole] = createSignal<AppRole>("member");
   const [error, setError] = createSignal<string | null>(null);
 
+  /**
+   * Set when an invite was created but its email could not be sent — which is
+   * the normal case in local development, where no RESEND_API_KEY is
+   * configured. The invitation itself is committed either way, so the link has
+   * to be reachable from somewhere other than the server log.
+   */
+  const [undelivered, setUndelivered] = createSignal<{ email: string; url: string } | null>(null);
+  const [copied, setCopied] = createSignal(false);
+
   async function refresh() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["members", params().orgSlug] }),
@@ -70,11 +79,16 @@ function MembersPage() {
           onSubmit={(e) => {
             e.preventDefault();
             void run(async () => {
-              await inviteMember({
+              const invited = email();
+              const result = await inviteMember({
                 orgSlug: params().orgSlug,
-                email: email(),
+                email: invited,
                 role: inviteRole(),
               });
+              setCopied(false);
+              setUndelivered(
+                result.emailDelivered ? null : { email: invited, url: result.acceptUrl },
+              );
               setEmail("");
             });
           }}
@@ -100,6 +114,35 @@ function MembersPage() {
           <button type="submit">Send invite</button>
         </form>
       </Can>
+
+      {/*
+        Deliberately persistent rather than a toast: whoever sent the invite has
+        to be able to come back and copy the link. It is dismissed only when the
+        next invite is sent.
+      */}
+      <Show when={undelivered()}>
+        {(pending) => (
+          <section class="card">
+            <h2>Invitation created, but not emailed</h2>
+            <p class="muted">
+              No mail provider is configured, so send this link to{" "}
+              <strong>{pending().email}</strong> yourself. It expires in 7 days and only works
+              for that address.
+            </p>
+            <p>
+              <code class="key">{pending().url}</code>
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                void navigator.clipboard.writeText(pending().url).then(() => setCopied(true));
+              }}
+            >
+              {copied() ? "Copied" : "Copy link"}
+            </button>
+          </section>
+        )}
+      </Show>
 
       <section class="card">
         <table class="table">

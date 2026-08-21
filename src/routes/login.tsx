@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/solid-query";
-import { createFileRoute, redirect, useRouter } from "@tanstack/solid-router";
+import { createFileRoute, Link, redirect, useRouter } from "@tanstack/solid-router";
 import { createSignal, Show } from "solid-js";
 import { z } from "zod";
 import { signInWithPassword } from "~/server/rpc/auth";
@@ -96,6 +96,11 @@ function LoginPage() {
         <button type="submit" disabled={pending()}>
           {pending() ? "Signing in…" : "Sign in"}
         </button>
+
+        <p class="hint">
+          <Link to="/forgot-password">Forgot your password?</Link> &middot;{" "}
+          <Link to="/signup">Create an account</Link>
+        </p>
 
         <p class="hint">
           Seeded accounts, all with password <code>password123</code>:

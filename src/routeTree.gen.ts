@@ -11,9 +11,15 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthedRouteImport } from './routes/_authed'
+import { Route as AcceptInviteRouteImport } from './routes/accept-invite'
+import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as NewOrgRouteImport } from './routes/new-org'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as SelectOrgRouteImport } from './routes/select-org'
+import { Route as SignupRouteImport } from './routes/signup'
 import { Route as AuthedOrgSlugRouteImport } from './routes/_authed/$orgSlug'
+import { Route as AuthedAccountRouteImport } from './routes/_authed/account'
 import { Route as AuthedOrgSlugIndexRouteImport } from './routes/_authed/$orgSlug/index'
 import { Route as AuthedOrgSlugAuditRouteImport } from './routes/_authed/$orgSlug/audit'
 import { Route as AuthedOrgSlugIssuesRouteImport } from './routes/_authed/$orgSlug/issues'
@@ -31,9 +37,29 @@ const AuthedRoute = AuthedRouteImport.update({
   id: '/_authed',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AcceptInviteRoute = AcceptInviteRouteImport.update({
+  id: '/accept-invite',
+  path: '/accept-invite',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
+  id: '/forgot-password',
+  path: '/forgot-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NewOrgRoute = NewOrgRouteImport.update({
+  id: '/new-org',
+  path: '/new-org',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SelectOrgRoute = SelectOrgRouteImport.update({
@@ -41,9 +67,19 @@ const SelectOrgRoute = SelectOrgRouteImport.update({
   path: '/select-org',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SignupRoute = SignupRouteImport.update({
+  id: '/signup',
+  path: '/signup',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthedOrgSlugRoute = AuthedOrgSlugRouteImport.update({
   id: '/$orgSlug',
   path: '/$orgSlug',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedAccountRoute = AuthedAccountRouteImport.update({
+  id: '/account',
+  path: '/account',
   getParentRoute: () => AuthedRoute,
 } as any)
 const AuthedOrgSlugIndexRoute = AuthedOrgSlugIndexRouteImport.update({
@@ -86,9 +122,15 @@ const AuthedOrgSlugProjectsProjectIdRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/accept-invite': typeof AcceptInviteRoute
+  '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
+  '/new-org': typeof NewOrgRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/select-org': typeof SelectOrgRoute
+  '/signup': typeof SignupRoute
   '/$orgSlug': typeof AuthedOrgSlugRouteWithChildren
+  '/account': typeof AuthedAccountRoute
   '/$orgSlug/audit': typeof AuthedOrgSlugAuditRoute
   '/$orgSlug/issues': typeof AuthedOrgSlugIssuesRoute
   '/$orgSlug/members': typeof AuthedOrgSlugMembersRoute
@@ -99,8 +141,14 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/accept-invite': typeof AcceptInviteRoute
+  '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
+  '/new-org': typeof NewOrgRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/select-org': typeof SelectOrgRoute
+  '/signup': typeof SignupRoute
+  '/account': typeof AuthedAccountRoute
   '/$orgSlug/audit': typeof AuthedOrgSlugAuditRoute
   '/$orgSlug/issues': typeof AuthedOrgSlugIssuesRoute
   '/$orgSlug/members': typeof AuthedOrgSlugMembersRoute
@@ -113,9 +161,15 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_authed': typeof AuthedRouteWithChildren
+  '/accept-invite': typeof AcceptInviteRoute
+  '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
+  '/new-org': typeof NewOrgRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/select-org': typeof SelectOrgRoute
+  '/signup': typeof SignupRoute
   '/_authed/$orgSlug': typeof AuthedOrgSlugRouteWithChildren
+  '/_authed/account': typeof AuthedAccountRoute
   '/_authed/$orgSlug/audit': typeof AuthedOrgSlugAuditRoute
   '/_authed/$orgSlug/issues': typeof AuthedOrgSlugIssuesRoute
   '/_authed/$orgSlug/members': typeof AuthedOrgSlugMembersRoute
@@ -128,9 +182,15 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/accept-invite'
+    | '/forgot-password'
     | '/login'
+    | '/new-org'
+    | '/reset-password'
     | '/select-org'
+    | '/signup'
     | '/$orgSlug'
+    | '/account'
     | '/$orgSlug/audit'
     | '/$orgSlug/issues'
     | '/$orgSlug/members'
@@ -141,8 +201,14 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/accept-invite'
+    | '/forgot-password'
     | '/login'
+    | '/new-org'
+    | '/reset-password'
     | '/select-org'
+    | '/signup'
+    | '/account'
     | '/$orgSlug/audit'
     | '/$orgSlug/issues'
     | '/$orgSlug/members'
@@ -154,9 +220,15 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/_authed'
+    | '/accept-invite'
+    | '/forgot-password'
     | '/login'
+    | '/new-org'
+    | '/reset-password'
     | '/select-org'
+    | '/signup'
     | '/_authed/$orgSlug'
+    | '/_authed/account'
     | '/_authed/$orgSlug/audit'
     | '/_authed/$orgSlug/issues'
     | '/_authed/$orgSlug/members'
@@ -169,8 +241,13 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthedRoute: typeof AuthedRouteWithChildren
+  AcceptInviteRoute: typeof AcceptInviteRoute
+  ForgotPasswordRoute: typeof ForgotPasswordRoute
   LoginRoute: typeof LoginRoute
+  NewOrgRoute: typeof NewOrgRoute
+  ResetPasswordRoute: typeof ResetPasswordRoute
   SelectOrgRoute: typeof SelectOrgRoute
+  SignupRoute: typeof SignupRoute
 }
 
 declare module '@tanstack/solid-router' {
@@ -189,11 +266,39 @@ declare module '@tanstack/solid-router' {
       preLoaderRoute: typeof AuthedRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/accept-invite': {
+      id: '/accept-invite'
+      path: '/accept-invite'
+      fullPath: '/accept-invite'
+      preLoaderRoute: typeof AcceptInviteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/forgot-password': {
+      id: '/forgot-password'
+      path: '/forgot-password'
+      fullPath: '/forgot-password'
+      preLoaderRoute: typeof ForgotPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/new-org': {
+      id: '/new-org'
+      path: '/new-org'
+      fullPath: '/new-org'
+      preLoaderRoute: typeof NewOrgRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/select-org': {
@@ -203,11 +308,25 @@ declare module '@tanstack/solid-router' {
       preLoaderRoute: typeof SelectOrgRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/signup': {
+      id: '/signup'
+      path: '/signup'
+      fullPath: '/signup'
+      preLoaderRoute: typeof SignupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authed/$orgSlug': {
       id: '/_authed/$orgSlug'
       path: '/$orgSlug'
       fullPath: '/$orgSlug'
       preLoaderRoute: typeof AuthedOrgSlugRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/account': {
+      id: '/_authed/account'
+      path: '/account'
+      fullPath: '/account'
+      preLoaderRoute: typeof AuthedAccountRouteImport
       parentRoute: typeof AuthedRoute
     }
     '/_authed/$orgSlug/': {
@@ -288,10 +407,12 @@ const AuthedOrgSlugRouteWithChildren = AuthedOrgSlugRoute._addFileChildren(
 
 interface AuthedRouteChildren {
   AuthedOrgSlugRoute: typeof AuthedOrgSlugRouteWithChildren
+  AuthedAccountRoute: typeof AuthedAccountRoute
 }
 
 const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedOrgSlugRoute: AuthedOrgSlugRouteWithChildren,
+  AuthedAccountRoute: AuthedAccountRoute,
 }
 
 const AuthedRouteWithChildren =
@@ -300,8 +421,13 @@ const AuthedRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthedRoute: AuthedRouteWithChildren,
+  AcceptInviteRoute: AcceptInviteRoute,
+  ForgotPasswordRoute: ForgotPasswordRoute,
   LoginRoute: LoginRoute,
+  NewOrgRoute: NewOrgRoute,
+  ResetPasswordRoute: ResetPasswordRoute,
   SelectOrgRoute: SelectOrgRoute,
+  SignupRoute: SignupRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

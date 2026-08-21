@@ -111,6 +111,7 @@ function OrgLayout() {
         <div class="user-menu">
           <div class="user-name">{session.user.fullName ?? session.user.email}</div>
           <div class="user-email">{session.user.email}</div>
+          <Link to="/account">Account</Link>
           <button type="button" class="link-button" onClick={onSignOut}>
             Sign out
           </button>

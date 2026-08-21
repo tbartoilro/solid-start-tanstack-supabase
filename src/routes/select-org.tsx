@@ -20,8 +20,7 @@ function SelectOrg() {
             each={session?.orgs ?? []}
             fallback={
               <li class="muted">
-                You are not a member of any organization yet. Ask an administrator for an
-                invitation.
+                You are not a member of any organization yet.
               </li>
             }
           >
@@ -35,6 +34,10 @@ function SelectOrg() {
             )}
           </For>
         </ul>
+
+        <p class="hint">
+          Starting something new? <Link to="/new-org">Create an organization</Link>.
+        </p>
       </div>
     </main>
   );
