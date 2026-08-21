@@ -382,6 +382,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      accept_invitation: {
+        Args: { invite_token: string }
+        Returns: {
+          out_org_id: string
+          out_org_slug: string
+          out_role: Database["public"]["Enums"]["app_role"]
+        }[]
+      }
       custom_access_token_hook: { Args: { event: Json }; Returns: Json }
       has_permission: {
         Args: {
@@ -404,6 +412,8 @@ export type Database = {
         | "members.manage"
         | "org.settings"
         | "audit.read"
+        | "org.billing"
+        | "org.export"
       app_role: "owner" | "admin" | "member" | "viewer"
       issue_priority: "none" | "low" | "medium" | "high" | "urgent"
       issue_status:
@@ -555,6 +565,8 @@ export const Constants = {
         "members.manage",
         "org.settings",
         "audit.read",
+        "org.billing",
+        "org.export",
       ],
       app_role: ["owner", "admin", "member", "viewer"],
       issue_priority: ["none", "low", "medium", "high", "urgent"],
