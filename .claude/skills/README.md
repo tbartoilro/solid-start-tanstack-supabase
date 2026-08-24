@@ -10,6 +10,7 @@ template can work correctly without rediscovering how it fits together.
 | [`add-tenant-resource`](add-tenant-resource/SKILL.md) | A new tenant-owned table, end to end: migration, RLS, service, RPC, query, screen. |
 | [`solidstart-tanstack-seam`](solidstart-tanstack-seam/SKILL.md) | Routes, loaders, SSR, hydration — the least standard part of the stack. |
 | [`park-ui-conventions`](park-ui-conventions/SKILL.md) | Any UI work: the responsive table contract, portals, and the layout traps. |
+| [`resource-descriptors`](resource-descriptors/SKILL.md) | The framework layer: descriptors, sorting, DataTable, bulk actions, codegen. |
 | [`testing-and-verification`](testing-and-verification/SKILL.md) | Running or writing tests, and the environment traps around them. |
 
 Start with `template-architecture`; it links onward.

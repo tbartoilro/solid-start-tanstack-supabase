@@ -43,41 +43,48 @@ function idTypeOf(pk: ColumnFacts | undefined): "uuid" | "bigint" {
   return pk?.type === "uuid" ? "uuid" : "bigint";
 }
 
-function columnSource(
-  column: ColumnFacts,
-  opts: { primary: boolean; hidden: boolean },
-): string {
-  const id = camel(column.name);
-  const parts = [`      id: ${JSON.stringify(id)}`, `      label: ${JSON.stringify(humanise(column.name))}`];
+/**
+ * One column literal.
+ *
+ * Properties and comments are kept apart until the end, because a comment is
+ * not a property: joining them with commas puts a comma inside the comment and
+ * drops the one the previous property needed. That produced a generated file
+ * that did not parse — the emitter now assembles lines and only the property
+ * lines take a trailing comma.
+ */
+function columnSource(column: ColumnFacts, opts: { primary: boolean; hidden: boolean }): string {
+  const lines: string[] = [];
+  const prop = (text: string) => lines.push(`      ${text},`);
+  const note = (text: string) => lines.push(`      // ${text}`);
 
-  if (opts.primary) parts.push(`      layout: "primary"`);
-  if (opts.hidden) parts.push(`      hidden: true`);
+  prop(`id: ${JSON.stringify(camel(column.name))}`);
+  prop(`label: ${JSON.stringify(humanise(column.name))}`);
+  if (opts.primary) prop(`layout: "primary"`);
+  if (opts.hidden) prop(`hidden: true`);
+
   if (inferSortable(column)) {
-    parts.push(`      sortBy: ${JSON.stringify(column.name)}`);
+    prop(`sortBy: ${JSON.stringify(column.name)}`);
     // Dates and numbers read newest/highest first; that is what someone is
     // looking for when they click the header.
     const kind = inferKind(column);
-    if (kind === "date" || kind === "number") parts.push(`      sortDescFirst: true`);
+    if (kind === "date" || kind === "number") prop(`sortDescFirst: true`);
   } else if (column.references) {
-    parts.push(
-      `      // Not sortable: reached through a foreign key, so the embed is a`,
-      `      // left join when the column is nullable and ordering a parent by`,
-      `      // one is unreliable. Making the join inner would hide rows with`,
-      `      // nothing on the other side. TODO: confirm this is what you want.`,
-    );
+    note("Not sortable: reached through a foreign key, so the embed is a left");
+    note("join when the column is nullable, and ordering a parent by one is");
+    note("unreliable. Making the join inner would hide rows with nothing on");
+    note("the other side. TODO: confirm this is what you want.");
   }
-  if (inferSearchable(column)) parts.push(`      searchAs: ${JSON.stringify(column.name)}`);
-  parts.push(`      kind: ${JSON.stringify(inferKind(column))}`);
+
+  if (inferSearchable(column)) prop(`searchAs: ${JSON.stringify(column.name)}`);
+  prop(`kind: ${JSON.stringify(inferKind(column))}`);
 
   if (column.enumValues?.length) {
-    parts.push(
-      `      // Values, in declaration order — which is also how Postgres sorts`,
-      `      // them, so ascending is semantic rather than alphabetical:`,
-      `      // ${column.enumValues.join(", ")}`,
-    );
+    note("Values in declaration order, which is also how Postgres sorts them,");
+    note(`so ascending is semantic rather than alphabetical:`);
+    note(column.enumValues.join(", "));
   }
 
-  return `    {\n${parts.join(",\n").replace(/,\n(\s+\/\/)/g, "\n$1")},\n    }`;
+  return `    {\n${lines.join("\n")}\n    }`;
 }
 
 export function emitDescriptor(table: TableFacts, options: EmitOptions = {}): string {

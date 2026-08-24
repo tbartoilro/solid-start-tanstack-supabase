@@ -27,9 +27,9 @@ Read `.claude/skills/template-architecture/SKILL.md` before touching server code
 | 0. Monorepo migration | ☑ **done** — `9140d40`, `1626c1d`, `989d5f0` |
 | 1. `packages/core` — descriptor types | ☑ **done** — `8282f81` |
 | 2. `packages/server` + sorting | ☑ **code-complete** — all four lists wired, sorting verified end to end against the database. Final full-suite run needs confirming. |
-| 3. `DataTable` component (TanStack v8) | ☐ not started |
-| 4. Bulk actions + audit CSV | ☐ not started |
-| 5. `packages/codegen` — introspection CLI | ☐ not started |
+| 3. `DataTable` component (TanStack v8) | ☑ **done** — `2a8b15b`, audit log converted as the proof |
+| 4. Bulk actions + audit CSV | ◐ server layer + audit CSV done; issues/projects/members UI remains |
+| 5. `packages/codegen` — introspection CLI | ◐ introspection + emitter written and unit-tested; not yet run against a live database |
 | 6. `packages/cli` — component scaffolding | ☐ not started |
 
 **Last known-green baseline:** `989d5f0` (2026-08-24) — typecheck clean · vitest 67/67 · Playwright **69/69**, verified *after* the monorepo migration and identical to the pre-migration baseline at tag `v0.1.0-reference`.

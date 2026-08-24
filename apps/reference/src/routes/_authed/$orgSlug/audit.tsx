@@ -1,11 +1,16 @@
 import { useQuery } from "@tanstack/solid-query";
 import { createFileRoute, useNavigate } from "@tanstack/solid-router";
-import { Show } from "solid-js";
+import type { RowSelectionState } from "@tanstack/solid-table";
+import { createSignal, Show } from "solid-js";
 import { z } from "zod";
 import { totalPages as pages } from "@orgadmin/core";
 import { DataTable } from "~/components/DataTable";
 import { Pagination } from "~/components/data";
-import { EmptyState, PageHeader } from "~/components/page";
+import { BulkBar } from "~/components/BulkBar";
+import { EmptyState, ErrorBanner, PageHeader } from "~/components/page";
+import { Button } from "~/components/ui/button";
+import { downloadText } from "~/lib/download";
+import { exportAuditEntries } from "~/server/rpc/bulk";
 import * as Card from "~/components/ui/card";
 import { auditQuery } from "~/lib/queries";
 import { auditResource, AUDIT_SORTS, type AuditSort } from "~/resources/audit";
@@ -37,6 +42,30 @@ function AuditPage() {
 
   const audit = useQuery(() => auditQuery(params().orgSlug, search()));
 
+  /*
+   * Selection lives here rather than inside the table, and is keyed by row id,
+   * so it survives paging and re-sorting: you can select entries on page 1,
+   * page 4 and page 9 and export all of them at once. That is the only version
+   * of bulk worth having on a list this long.
+   */
+  const [selection, setSelection] = createSignal<RowSelectionState>({});
+  const [error, setError] = createSignal<string | null>(null);
+  const [exporting, setExporting] = createSignal(false);
+
+  async function downloadSelected(ids: string[]) {
+    setError(null);
+    setExporting(true);
+    try {
+      const result = await exportAuditEntries({ orgSlug: params().orgSlug, ids });
+      downloadText(result.csv, result.filename, "text/csv;charset=utf-8");
+      setSelection({});
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not export those entries.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   const totalPages = () => pages(audit.data?.total ?? 0, audit.data?.pageSize ?? 50);
 
   /*
@@ -54,8 +83,24 @@ function AuditPage() {
         description="Written by database triggers, not application code — there is no INSERT policy on this table, so entries cannot be forged or rewritten through the API."
       />
 
+      <ErrorBanner message={error()} />
+
       <Card.Root>
         <Card.Body p="0">
+          <BulkBar selection={selection} onClear={() => setSelection({})} noun="entries">
+            {(ids) => (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                loading={exporting()}
+                onClick={() => void downloadSelected(ids)}
+              >
+                Download CSV
+              </Button>
+            )}
+          </BulkBar>
+
           <Show
             when={(audit.data?.entries.length ?? 0) > 0}
             fallback={<EmptyState title="Nothing recorded yet" />}
@@ -66,6 +111,7 @@ function AuditPage() {
               context={() => undefined}
               sort={() => ({ column: search().sort, dir: search().dir })}
               onSortChange={setSort}
+              selection={{ value: selection, onChange: setSelection }}
             />
           </Show>
 

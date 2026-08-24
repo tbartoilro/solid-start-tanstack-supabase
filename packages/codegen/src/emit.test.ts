@@ -168,3 +168,46 @@ describe("describeTables", () => {
     expect(lines[2]).toContain("not tenant-scoped");
   });
 });
+
+/**
+ * The test that was missing.
+ *
+ * The suite above checked what the output *says* and passed while the emitter
+ * produced a file that did not parse: a comment was being joined to the
+ * property list with commas, which put a comma inside the comment and swallowed
+ * the one the previous property needed. Asserting on substrings cannot see
+ * that. This checks the shape instead.
+ */
+describe("emitted source is syntactically well-formed", () => {
+  for (const table of tables.filter((t) => canDescribe(t))) {
+    it(`${table.name} balances its delimiters and comments no commas`, () => {
+      const source = emitDescriptor(table);
+
+      for (const [open, close] of [
+        ["{", "}"],
+        ["[", "]"],
+        ["(", ")"],
+      ]) {
+        const opens = source.split(open).length - 1;
+        const closes = source.split(close).length - 1;
+        expect(opens, `unbalanced ${open}${close} in ${table.name}`).toBe(closes);
+      }
+
+      // A comma appended after a sentence-ending period is the exact bug: the
+      // comma is inside the comment, so it separates nothing. Prose that simply
+      // wraps mid-sentence on a comma is fine, so the check is narrow.
+      const swallowedComma = source
+        .split("\n")
+        .filter((line) => /^\s*\/\/.*[.")\]}],\s*$/.test(line));
+      expect(swallowedComma, "a comma was absorbed into a comment").toEqual([]);
+
+      // Every property line inside the column literals must end in a comma or
+      // an opening brace; anything else means a separator went missing.
+      const dangling = source
+        .split("\n")
+        .filter((line) => /^\s{6}[a-zA-Z]+:/.test(line))
+        .filter((line) => !/[,{]\s*$/.test(line));
+      expect(dangling, `property without a trailing comma in ${table.name}`).toEqual([]);
+    });
+  }
+});
