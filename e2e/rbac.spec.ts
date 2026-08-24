@@ -30,7 +30,17 @@ test.describe("viewer", () => {
 
   test("can read projects", async ({ page }) => {
     await page.goto("/acme/projects");
-    await expect(page.getByText("Web Platform")).toBeVisible();
+
+    // Rows, not a named project. Looking for "Web Platform" asserted that one
+    // seeded row happened to be on the first page, which stopped being true the
+    // moment Acme had more than a page of projects — the list is ordered by
+    // name and that one sorts last. What the test is here to prove is that a
+    // viewer, who holds no write permission at all, can still read the list.
+    await expect(page.getByRole("table")).toBeVisible();
+    expect(await page.getByRole("row").count()).toBeGreaterThan(1);
+
+    // And that what they can read is Acme's, not another tenant's.
+    await expect(page.getByText("Globex Internal")).toHaveCount(0);
   });
 
   test("is not offered a create-project form", async ({ page }) => {

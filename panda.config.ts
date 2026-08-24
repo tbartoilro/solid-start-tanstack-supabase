@@ -63,7 +63,7 @@ export default defineConfig({
           base: { requiredIndicator: { color: "fg.error", ms: "0.5" } },
         },
         select: {
-          slots: ["indicatorGroup"],
+          slots: ["indicatorGroup", "content"],
           base: {
             indicatorGroup: {
               display: "inline-flex",
@@ -74,6 +74,27 @@ export default defineConfig({
               top: "0",
               bottom: "0",
               pointerEvents: "none",
+            },
+            /*
+             * Bound the popup and let it scroll.
+             *
+             * Neither the preset nor Ark caps this, so the list is as tall as
+             * its contents: an assignee picker for a 64-person organization
+             * measured 2600px inside a 900px viewport, with everything past the
+             * first dozen names below the fold and unreachable. It only looked
+             * fine because the seed had four members.
+             *
+             * `--available-height` is published by the positioner (floating-ui
+             * measures the space to the viewport edge), so the list grows to fit
+             * whatever room the trigger has and stops there. The fallback covers
+             * the first paint, before the variable is set.
+             */
+            content: {
+              maxHeight: "min(20rem, var(--available-height, 20rem))",
+              overflowY: "auto",
+              // Stops a scroll gesture that reaches the end of the list from
+              // continuing into the page behind it.
+              overscrollBehavior: "contain",
             },
           },
         },
