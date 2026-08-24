@@ -1,7 +1,13 @@
 import { useQueryClient } from "@tanstack/solid-query";
 import { createFileRoute, Link, redirect, useRouter } from "@tanstack/solid-router";
-import { createSignal, Show } from "solid-js";
+import { createSignal } from "solid-js";
+import { Box, Stack } from "styled-system/jsx";
 import { z } from "zod";
+import { CenteredCard, ErrorBanner } from "~/components/page";
+import { Button } from "~/components/ui/button";
+import * as Field from "~/components/ui/field";
+import { Input } from "~/components/ui/input";
+import { Text } from "~/components/ui/text";
 import { signInWithPassword } from "~/server/rpc/auth";
 
 const searchSchema = z.object({
@@ -61,55 +67,52 @@ function LoginPage() {
   }
 
   return (
-    <main class="centered">
-      <form class="card auth-form" onSubmit={onSubmit}>
-        <h1>Sign in</h1>
+    <CenteredCard title="Sign in" description="Welcome back.">
+      <form onSubmit={onSubmit}>
+        <Stack gap="4">
+          <Field.Root required>
+            <Field.Label>Email</Field.Label>
+            <Input
+              type="email"
+              autocomplete="email"
+              required
+              value={email()}
+              onInput={(e) => setEmail(e.currentTarget.value)}
+            />
+          </Field.Root>
 
-        <label>
-          Email
-          <input
-            type="email"
-            autocomplete="email"
-            required
-            value={email()}
-            onInput={(e) => setEmail(e.currentTarget.value)}
-          />
-        </label>
+          <Field.Root required>
+            <Field.Label>Password</Field.Label>
+            <Input
+              type="password"
+              autocomplete="current-password"
+              required
+              value={password()}
+              onInput={(e) => setPassword(e.currentTarget.value)}
+            />
+          </Field.Root>
 
-        <label>
-          Password
-          <input
-            type="password"
-            autocomplete="current-password"
-            required
-            value={password()}
-            onInput={(e) => setPassword(e.currentTarget.value)}
-          />
-        </label>
+          <ErrorBanner message={error()} />
 
-        <Show when={error()}>
-          <p class="error" role="alert">
-            {error()}
-          </p>
-        </Show>
+          <Button type="submit" loading={pending()} loadingText="Signing in…" width="full">
+            Sign in
+          </Button>
 
-        <button type="submit" disabled={pending()}>
-          {pending() ? "Signing in…" : "Sign in"}
-        </button>
+          <Text fontSize="sm" color="fg.muted" textAlign="center">
+            <Link to="/forgot-password">Forgot your password?</Link> ·{" "}
+            <Link to="/signup">Create an account</Link>
+          </Text>
 
-        <p class="hint">
-          <Link to="/forgot-password">Forgot your password?</Link> &middot;{" "}
-          <Link to="/signup">Create an account</Link>
-        </p>
-
-        <p class="hint">
-          Seeded accounts, all with password <code>password123</code>:
-          <br />
-          <code>owner@acme.test</code>, <code>admin@acme.test</code>,{" "}
-          <code>member@acme.test</code>, <code>viewer@acme.test</code>,{" "}
-          <code>outsider@globex.test</code>
-        </p>
+          <Box borderTopWidth="1px" borderColor="border.default" pt="4">
+            <Text fontSize="xs" color="fg.muted" lineHeight="1.8">
+              Seeded accounts, all with password <code>password123</code>:<br />
+              <code>owner@acme.test</code>, <code>admin@acme.test</code>,{" "}
+              <code>member@acme.test</code>, <code>viewer@acme.test</code>,{" "}
+              <code>outsider@globex.test</code>
+            </Text>
+          </Box>
+        </Stack>
       </form>
-    </main>
+    </CenteredCard>
   );
 }

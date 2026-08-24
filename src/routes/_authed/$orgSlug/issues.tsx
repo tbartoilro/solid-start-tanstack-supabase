@@ -1,10 +1,33 @@
+import { createListCollection } from "@ark-ui/solid/select";
 import { useQuery } from "@tanstack/solid-query";
 import { createFileRoute, useNavigate } from "@tanstack/solid-router";
-import { For, Show } from "solid-js";
+import { ChevronsUpDown } from "lucide-solid";
+import { createMemo, For, Show } from "solid-js";
+import { Portal } from "solid-js/web";
+import { Stack, Wrap } from "styled-system/jsx";
 import { z } from "zod";
+import { FilterBar, Pagination, TableScroll } from "~/components/data";
+import { EmptyState, PageHeader } from "~/components/page";
+import { IssueKey, PriorityBadge, StatusBadge } from "~/components/StatusBadge";
+import * as Card from "~/components/ui/card";
+import * as Checkbox from "~/components/ui/checkbox";
+import * as Field from "~/components/ui/field";
+import { Input } from "~/components/ui/input";
+import * as Select from "~/components/ui/select";
+import * as Table from "~/components/ui/table";
+import { Text } from "~/components/ui/text";
 import { issuesQuery, projectsQuery, type IssueFilters } from "~/lib/queries";
 
 const STATUSES = ["backlog", "todo", "in_progress", "in_review", "done", "cancelled"] as const;
+
+const STATUS_LABEL: Record<(typeof STATUSES)[number], string> = {
+  backlog: "Backlog",
+  todo: "Todo",
+  in_progress: "In progress",
+  in_review: "In review",
+  done: "Done",
+  cancelled: "Cancelled",
+};
 
 /**
  * Filter state lives in the URL rather than component state, so a filtered view
@@ -41,6 +64,11 @@ export const Route = createFileRoute("/_authed/$orgSlug/issues")({
   component: IssuesPage,
 });
 
+// Ties the status checkboxes to their heading for assistive tech; a module
+// constant because the id has to match in two places and there is only ever one
+// of these groups on the page.
+const STATUS_GROUP_LABEL_ID = "issues-status-filter-label";
+
 function IssuesPage() {
   const params = Route.useParams();
   const search = Route.useSearch();
@@ -56,6 +84,15 @@ function IssuesPage() {
   const issues = useQuery(() => issuesQuery(params().orgSlug, filters()));
   const projects = useQuery(() => projectsQuery(params().orgSlug));
 
+  const projectCollection = createMemo(() =>
+    createListCollection({
+      items: [
+        { label: "All projects", value: "" },
+        ...(projects.data ?? []).map((p) => ({ label: p.name, value: p.id })),
+      ],
+    }),
+  );
+
   // Any filter change resets to page 1 — otherwise narrowing the results while
   // on page 7 lands the user on an empty screen.
   const setFilter = (patch: Record<string, unknown>) =>
@@ -66,111 +103,167 @@ function IssuesPage() {
 
   return (
     <>
-      <header class="page-header">
-        <h1>Issues</h1>
-      </header>
+      <PageHeader
+        title="Issues"
+        description="Filters live in the URL, so any view here is linkable and survives a reload."
+      />
 
-      <section class="card filters">
-        <label>
-          Search
-          <input
-            type="search"
-            value={search().q ?? ""}
-            placeholder="Title contains…"
-            onInput={(e) => setFilter({ q: e.currentTarget.value || undefined })}
+      <Card.Root mb="6">
+        <Card.Body>
+          <FilterBar>
+            <Field.Root>
+              <Field.Label>Search</Field.Label>
+              <Input
+                size="sm"
+                type="search"
+                value={search().q ?? ""}
+                placeholder="Title contains…"
+                onInput={(e) => setFilter({ q: e.currentTarget.value || undefined })}
+              />
+            </Field.Root>
+
+            <Select.Root
+              size="sm"
+              collection={projectCollection()}
+              value={[search().project ?? ""]}
+              onValueChange={(d) => setFilter({ project: d.value[0] || undefined })}
+              positioning={{ sameWidth: true }}
+            >
+              <Select.Label>Project</Select.Label>
+              <Select.Control>
+                <Select.Trigger>
+                  <Select.ValueText placeholder="All projects" />
+                  <Select.IndicatorGroup>
+                    <Select.Indicator>
+                      <ChevronsUpDown size={16} />
+                    </Select.Indicator>
+                  </Select.IndicatorGroup>
+                </Select.Trigger>
+              </Select.Control>
+              {/*
+                Portalled so the list escapes the filter card: rendered inline it
+                inherits the card's stacking and clipping, which puts the options
+                behind the table on a narrow screen.
+              */}
+              <Portal>
+                <Select.Positioner>
+                  <Select.Content>
+                    <For each={projectCollection().items}>
+                      {(item) => (
+                        <Select.Item item={item}>
+                          <Select.ItemText>{item.label}</Select.ItemText>
+                          <Select.ItemIndicator />
+                        </Select.Item>
+                      )}
+                    </For>
+                  </Select.Content>
+                </Select.Positioner>
+              </Portal>
+              <Select.HiddenSelect />
+            </Select.Root>
+
+            {/*
+              Six checkboxes are one control, so the group claims the full grid
+              row at every breakpoint instead of being crammed into a cell the
+              width of the search box. `role="group"` plus the heading id gives a
+              screen reader the same grouping the heading gives a sighted user.
+            */}
+            <Stack gap="2" gridColumn="1 / -1">
+              <Text id={STATUS_GROUP_LABEL_ID} fontSize="sm" fontWeight="medium">
+                Status
+              </Text>
+              <Wrap columnGap="4" rowGap="2" role="group" aria-labelledby={STATUS_GROUP_LABEL_ID}>
+                <For each={STATUSES}>
+                  {(s) => (
+                    <Checkbox.Root
+                      size="sm"
+                      checked={search().status?.includes(s) ?? false}
+                      onCheckedChange={(d) => {
+                        const current = search().status ?? [];
+                        const next = d.checked
+                          ? [...current, s]
+                          : current.filter((x) => x !== s);
+                        setFilter({ status: next.length ? next : undefined });
+                      }}
+                    >
+                      <Checkbox.Control>
+                        <Checkbox.Indicator />
+                      </Checkbox.Control>
+                      <Checkbox.Label>{STATUS_LABEL[s]}</Checkbox.Label>
+                      <Checkbox.HiddenInput />
+                    </Checkbox.Root>
+                  )}
+                </For>
+              </Wrap>
+            </Stack>
+          </FilterBar>
+        </Card.Body>
+      </Card.Root>
+
+      <Card.Root>
+        <Card.Body p="0">
+          <Show
+            when={(issues.data?.issues.length ?? 0) > 0}
+            fallback={
+              <EmptyState
+                title="No issues match these filters"
+                description="Try clearing the search box or widening the status selection."
+              />
+            }
+          >
+            <TableScroll minW="44rem">
+              <Table.Root size="sm">
+                <Table.Head>
+                  <Table.Row>
+                    <Table.Header>Issue</Table.Header>
+                    <Table.Header>Title</Table.Header>
+                    <Table.Header>Status</Table.Header>
+                    <Table.Header>Priority</Table.Header>
+                    <Table.Header>Assignee</Table.Header>
+                  </Table.Row>
+                </Table.Head>
+                <Table.Body>
+                  <For each={issues.data?.issues}>
+                    {(issue) => (
+                      <Table.Row>
+                        <Table.Cell>
+                          <IssueKey>{`${issue.project?.key}-${issue.number}`}</IssueKey>
+                        </Table.Cell>
+                        {/*
+                          `anywhere` rather than `break-word`: only the former
+                          also lowers the cell's min-content width, which is
+                          what stops a title with no spaces in it — a pasted URL
+                          or stack frame — from setting the width of the whole
+                          table and turning the scroll container into a
+                          kilometre of sideways travel.
+                        */}
+                        <Table.Cell overflowWrap="anywhere">{issue.title}</Table.Cell>
+                        <Table.Cell>
+                          <StatusBadge status={issue.status} />
+                        </Table.Cell>
+                        <Table.Cell>
+                          <PriorityBadge priority={issue.priority} />
+                        </Table.Cell>
+                        <Table.Cell>
+                          {issue.assignee?.fullName ?? issue.assignee?.email ?? "—"}
+                        </Table.Cell>
+                      </Table.Row>
+                    )}
+                  </For>
+                </Table.Body>
+              </Table.Root>
+            </TableScroll>
+          </Show>
+
+          <Pagination
+            page={search().page}
+            totalPages={totalPages()}
+            summary={`Page ${search().page} of ${totalPages()} · ${issues.data?.total ?? 0} issues`}
+            onPrevious={() => navigate({ search: (p) => ({ ...p, page: p.page - 1 }) })}
+            onNext={() => navigate({ search: (p) => ({ ...p, page: p.page + 1 }) })}
           />
-        </label>
-
-        <label>
-          Project
-          <select
-            value={search().project ?? ""}
-            onChange={(e) => setFilter({ project: e.currentTarget.value || undefined })}
-          >
-            <option value="">All projects</option>
-            <For each={projects.data}>{(p) => <option value={p.id}>{p.name}</option>}</For>
-          </select>
-        </label>
-
-        <fieldset class="status-filter">
-          <legend>Status</legend>
-          <For each={STATUSES}>
-            {(s) => (
-              <label class="checkbox">
-                <input
-                  type="checkbox"
-                  checked={search().status?.includes(s) ?? false}
-                  onChange={(e) => {
-                    const current = search().status ?? [];
-                    const next = e.currentTarget.checked
-                      ? [...current, s]
-                      : current.filter((x) => x !== s);
-                    setFilter({ status: next.length ? next : undefined });
-                  }}
-                />
-                {s}
-              </label>
-            )}
-          </For>
-        </fieldset>
-      </section>
-
-      <section class="card">
-        <table class="table">
-          <thead>
-            <tr>
-              <th>Issue</th>
-              <th>Title</th>
-              <th>Status</th>
-              <th>Priority</th>
-              <th>Assignee</th>
-            </tr>
-          </thead>
-          <tbody>
-            <For each={issues.data?.issues}>
-              {(issue) => (
-                <tr>
-                  <td>
-                    <span class="key">
-                      {issue.project?.key}-{issue.number}
-                    </span>
-                  </td>
-                  <td>{issue.title}</td>
-                  <td>
-                    <span class={`status status-${issue.status}`}>{issue.status}</span>
-                  </td>
-                  <td>{issue.priority}</td>
-                  <td>{issue.assignee?.fullName ?? issue.assignee?.email ?? "—"}</td>
-                </tr>
-              )}
-            </For>
-          </tbody>
-        </table>
-
-        <Show when={(issues.data?.issues.length ?? 0) === 0}>
-          <p class="muted">No issues match these filters.</p>
-        </Show>
-
-        <div class="pagination">
-          <button
-            type="button"
-            disabled={search().page <= 1}
-            onClick={() => navigate({ search: (p) => ({ ...p, page: p.page - 1 }) })}
-          >
-            Previous
-          </button>
-          <span class="muted">
-            Page {search().page} of {totalPages()} · {issues.data?.total ?? 0} issues
-          </span>
-          <button
-            type="button"
-            disabled={search().page >= totalPages()}
-            onClick={() => navigate({ search: (p) => ({ ...p, page: p.page + 1 }) })}
-          >
-            Next
-          </button>
-        </div>
-      </section>
+        </Card.Body>
+      </Card.Root>
     </>
   );
 }

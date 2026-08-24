@@ -1,6 +1,12 @@
 import { useQueryClient } from "@tanstack/solid-query";
-import { createFileRoute, redirect, useRouter } from "@tanstack/solid-router";
+import { createFileRoute, Link, redirect, useRouter } from "@tanstack/solid-router";
 import { createMemo, createSignal, Show } from "solid-js";
+import { Stack } from "styled-system/jsx";
+import { CenteredCard, ErrorBanner } from "~/components/page";
+import { Button } from "~/components/ui/button";
+import * as Field from "~/components/ui/field";
+import { Input } from "~/components/ui/input";
+import { Text } from "~/components/ui/text";
 import { slugify } from "~/lib/slug";
 import { createOrganization } from "~/server/rpc/org";
 
@@ -44,39 +50,42 @@ function NewOrgPage() {
   }
 
   return (
-    <main class="centered">
-      <form class="card auth-form" onSubmit={onSubmit}>
-        <h1>Create an organization</h1>
+    <CenteredCard title="Create an organization" description="You will be its owner.">
+      <form onSubmit={onSubmit}>
+        <Stack gap="4">
+          <Field.Root required>
+            <Field.Label>Organization name</Field.Label>
+            <Input
+              type="text"
+              required
+              maxLength={100}
+              value={name()}
+              onInput={(e) => setName(e.currentTarget.value)}
+            />
+            <Show when={slug()}>
+              <Field.HelperText>
+                URL: <code>/{slug()}</code>
+              </Field.HelperText>
+            </Show>
+          </Field.Root>
 
-        <label>
-          Organization name
-          <input
-            type="text"
-            required
-            maxLength={100}
-            value={name()}
-            onInput={(e) => setName(e.currentTarget.value)}
-          />
-        </label>
+          <ErrorBanner message={error()} />
 
-        <Show when={slug()}>
-          <p class="hint">
-            URL: <code>/{slug()}</code>
-          </p>
-        </Show>
+          <Button
+            type="submit"
+            loading={pending()}
+            loadingText="Creating…"
+            disabled={!slug()}
+            width="full"
+          >
+            Create organization
+          </Button>
 
-        <Show when={error()}>
-          <p class="error" role="alert">
-            {error()}
-          </p>
-        </Show>
-
-        <button type="submit" disabled={pending() || !slug()}>
-          {pending() ? "Creating…" : "Create organization"}
-        </button>
-
-        <p class="hint">You will be its owner.</p>
+          <Text fontSize="sm" color="fg.muted" textAlign="center">
+            <Link to="/select-org">Back to organizations</Link>
+          </Text>
+        </Stack>
       </form>
-    </main>
+    </CenteredCard>
   );
 }

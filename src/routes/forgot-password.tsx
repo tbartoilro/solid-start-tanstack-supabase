@@ -1,5 +1,11 @@
 import { createFileRoute, Link } from "@tanstack/solid-router";
 import { createSignal, Show } from "solid-js";
+import { Stack } from "styled-system/jsx";
+import { CenteredCard, ErrorBanner } from "~/components/page";
+import { Button } from "~/components/ui/button";
+import * as Field from "~/components/ui/field";
+import { Input } from "~/components/ui/input";
+import { Text } from "~/components/ui/text";
 import { requestPasswordReset } from "~/server/rpc/auth";
 
 export const Route = createFileRoute("/forgot-password")({
@@ -29,50 +35,50 @@ function ForgotPasswordPage() {
   }
 
   return (
-    <main class="centered">
-      <Show
-        when={!sent()}
-        fallback={
-          <div class="card">
-            <h1>Check your email</h1>
-            <p>
+    <Show
+      when={!sent()}
+      fallback={
+        <CenteredCard title="Check your email">
+          <Stack gap="4">
+            <Text>
               If an account exists for <strong>{email()}</strong>, a reset link is on its way.
-            </p>
-            <p class="hint">
+            </Text>
+            <Text fontSize="sm" color="fg.muted">
               <Link to="/login">Back to sign in</Link>
-            </p>
-          </div>
-        }
+            </Text>
+          </Stack>
+        </CenteredCard>
+      }
+    >
+      <CenteredCard
+        title="Reset your password"
+        description="We will email you a link to choose a new one."
       >
-        <form class="card auth-form" onSubmit={onSubmit}>
-          <h1>Reset your password</h1>
+        <form onSubmit={onSubmit}>
+          <Stack gap="4">
+            <Field.Root required>
+              <Field.Label>Email</Field.Label>
+              <Input
+                type="email"
+                autocomplete="email"
+                required
+                value={email()}
+                onInput={(e) => setEmail(e.currentTarget.value)}
+              />
+            </Field.Root>
 
-          <label>
-            Email
-            <input
-              type="email"
-              autocomplete="email"
-              required
-              value={email()}
-              onInput={(e) => setEmail(e.currentTarget.value)}
-            />
-          </label>
+            <ErrorBanner message={error()} />
 
-          <Show when={error()}>
-            <p class="error" role="alert">
-              {error()}
-            </p>
-          </Show>
+            <Button type="submit" loading={pending()} loadingText="Sending…" width="full">
+              Send reset link
+            </Button>
 
-          <button type="submit" disabled={pending()}>
-            {pending() ? "Sending…" : "Send reset link"}
-          </button>
-
-          <p class="hint">
-            <Link to="/login">Back to sign in</Link>
-          </p>
+            <Text fontSize="sm" color="fg.muted" textAlign="center">
+              <Link to="/login">Back to sign in</Link>
+            </Text>
+          </Stack>
         </form>
-      </Show>
-    </main>
+      </CenteredCard>
+    </Show>
   );
 }

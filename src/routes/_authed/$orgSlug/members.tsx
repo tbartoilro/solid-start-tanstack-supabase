@@ -1,7 +1,22 @@
+import { createListCollection } from "@ark-ui/solid/select";
 import { useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createFileRoute } from "@tanstack/solid-router";
+import { ChevronsUpDown } from "lucide-solid";
 import { createSignal, For, Show } from "solid-js";
+import { Portal } from "solid-js/web";
+import { Box, HStack, Stack } from "styled-system/jsx";
 import { Can } from "~/components/Can";
+import { CreateBar, TableScroll } from "~/components/data";
+import { EmptyState, ErrorBanner, PageHeader } from "~/components/page";
+import * as Alert from "~/components/ui/alert";
+import { Badge } from "~/components/ui/badge";
+import { Button } from "~/components/ui/button";
+import * as Card from "~/components/ui/card";
+import * as Field from "~/components/ui/field";
+import { Input } from "~/components/ui/input";
+import * as Select from "~/components/ui/select";
+import * as Table from "~/components/ui/table";
+import { Text } from "~/components/ui/text";
 import type { AppRole } from "~/lib/auth";
 import { invitationsQuery, membersQuery } from "~/lib/queries";
 import {
@@ -13,6 +28,11 @@ import {
 
 const ROLES: AppRole[] = ["owner", "admin", "member", "viewer"];
 
+/** One collection reused by every role picker on the page. */
+const roleCollection = createListCollection({
+  items: ROLES.map((r) => ({ label: r, value: r })),
+});
+
 export const Route = createFileRoute("/_authed/$orgSlug/members")({
   loader: async ({ context, params }) => {
     await Promise.all([
@@ -23,9 +43,81 @@ export const Route = createFileRoute("/_authed/$orgSlug/members")({
   component: MembersPage,
 });
 
+/**
+ * Compact role picker, shared by the invite form and each member row.
+ *
+ * `width` is a prop because the two callers want opposite things: in the invite
+ * form the surrounding grid decides the width, in a table cell the picker has
+ * to stay narrow so the Role column does not swallow the row.
+ */
+function RoleSelect(props: {
+  value: AppRole;
+  disabled?: boolean;
+  label?: string;
+  width?: string;
+  onChange: (role: AppRole) => void;
+}) {
+  return (
+    <Select.Root
+      size="sm"
+      width={props.width ?? "9rem"}
+      collection={roleCollection}
+      disabled={props.disabled}
+      value={[props.value]}
+      onValueChange={(d) => {
+        const next = d.value[0] as AppRole | undefined;
+        if (next && next !== props.value) props.onChange(next);
+      }}
+      positioning={{ sameWidth: true }}
+    >
+      <Show when={props.label}>
+        <Select.Label>{props.label}</Select.Label>
+      </Show>
+      <Select.Control>
+        <Select.Trigger>
+          <Select.ValueText />
+          <Select.IndicatorGroup>
+            <Select.Indicator>
+              <ChevronsUpDown size={16} />
+            </Select.Indicator>
+          </Select.IndicatorGroup>
+        </Select.Trigger>
+      </Select.Control>
+      {/*
+        Portalled to <body> because this picker also lives inside a table cell:
+        rendered inline the dropdown inherits that cell's text alignment and is
+        clipped by the table's horizontal scroll container.
+      */}
+      <Portal>
+        <Select.Positioner>
+          <Select.Content>
+            <For each={roleCollection.items}>
+              {(item) => (
+                <Select.Item item={item}>
+                  <Select.ItemText>{item.label}</Select.ItemText>
+                  <Select.ItemIndicator />
+                </Select.Item>
+              )}
+            </For>
+          </Select.Content>
+        </Select.Positioner>
+      </Portal>
+      <Select.HiddenSelect />
+    </Select.Root>
+  );
+}
+
 function MembersPage() {
   const params = Route.useParams();
-  const { session, org } = Route.useRouteContext()();
+  /*
+   * Accessors, not destructured values. `useRouteContext()` returns a signal,
+   * and this component does not remount when only `$orgSlug` changes — reading
+   * it once at setup would leave the permission gates and the "is this me?"
+   * check answering for whichever organization happened to be open at mount.
+   */
+  const context = Route.useRouteContext();
+  const session = () => context().session;
+  const org = () => context().org;
   const queryClient = useQueryClient();
 
   const members = useQuery(() => membersQuery(params().orgSlug));
@@ -34,6 +126,7 @@ function MembersPage() {
   const [email, setEmail] = createSignal("");
   const [inviteRole, setInviteRole] = createSignal<AppRole>("member");
   const [error, setError] = createSignal<string | null>(null);
+  const [pending, setPending] = createSignal(false);
 
   /**
    * Set when an invite was created but its email could not be sent — which is
@@ -63,56 +156,65 @@ function MembersPage() {
 
   return (
     <>
-      <header class="page-header">
-        <h1>Members</h1>
-      </header>
+      <PageHeader title="Members" description="Who belongs to this organization, and as what." />
 
-      <Show when={error()}>
-        <p class="error" role="alert">
-          {error()}
-        </p>
-      </Show>
+      <ErrorBanner message={error()} />
 
-      <Can session={session} orgId={org.id} permission="members.invite">
-        <form
-          class="card inline-form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void run(async () => {
-              const invited = email();
-              const result = await inviteMember({
-                orgSlug: params().orgSlug,
-                email: invited,
-                role: inviteRole(),
-              });
-              setCopied(false);
-              setUndelivered(
-                result.emailDelivered ? null : { email: invited, url: result.acceptUrl },
-              );
-              setEmail("");
-            });
-          }}
-        >
-          <label>
-            Invite by email
-            <input
-              type="email"
-              value={email()}
-              onInput={(e) => setEmail(e.currentTarget.value)}
-              required
-            />
-          </label>
-          <label>
-            Role
-            <select
-              value={inviteRole()}
-              onChange={(e) => setInviteRole(e.currentTarget.value as AppRole)}
+      <Can session={session()} orgId={org().id} permission="members.invite">
+        <Card.Root mb="6">
+          <Card.Body>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                setPending(true);
+                void run(async () => {
+                  const invited = email();
+                  const result = await inviteMember({
+                    orgSlug: params().orgSlug,
+                    email: invited,
+                    role: inviteRole(),
+                  });
+                  setCopied(false);
+                  setUndelivered(
+                    result.emailDelivered ? null : { email: invited, url: result.acceptUrl },
+                  );
+                  setEmail("");
+                }).finally(() => setPending(false));
+              }}
             >
-              <For each={ROLES}>{(r) => <option value={r}>{r}</option>}</For>
-            </select>
-          </label>
-          <button type="submit">Send invite</button>
-        </form>
+              <CreateBar
+                action={
+                  <Button
+                    type="submit"
+                    size="sm"
+                    loading={pending()}
+                    width={{ base: "full", md: "auto" }}
+                  >
+                    Send invite
+                  </Button>
+                }
+              >
+                <Field.Root required>
+                  <Field.Label>Invite by email</Field.Label>
+                  <Input
+                    type="email"
+                    size="sm"
+                    value={email()}
+                    onInput={(e) => setEmail(e.currentTarget.value)}
+                    placeholder="teammate@example.com"
+                    required
+                  />
+                </Field.Root>
+                <RoleSelect
+                  label="Role"
+                  width="full"
+                  value={inviteRole()}
+                  onChange={setInviteRole}
+                />
+              </CreateBar>
+            </form>
+          </Card.Body>
+        </Card.Root>
       </Can>
 
       {/*
@@ -121,131 +223,186 @@ function MembersPage() {
         next invite is sent.
       */}
       <Show when={undelivered()}>
-        {(pending) => (
-          <section class="card">
-            <h2>Invitation created, but not emailed</h2>
-            <p class="muted">
-              No mail provider is configured, so send this link to{" "}
-              <strong>{pending().email}</strong> yourself. It expires in 7 days and only works
-              for that address.
-            </p>
-            <p>
-              <code class="key">{pending().url}</code>
-            </p>
-            <button
-              type="button"
-              onClick={() => {
-                void navigator.clipboard.writeText(pending().url).then(() => setCopied(true));
-              }}
-            >
-              {copied() ? "Copied" : "Copy link"}
-            </button>
-          </section>
+        {(invite) => (
+          <Alert.Root mb="6" colorPalette="amber" alignItems="flex-start">
+            {/*
+              The alert lays its icon and content out side by side, and a track
+              in that layout sizes itself to its content by default — so without
+              `minW="0"` the unbreakable invite URL below would set the width of
+              the whole page instead of wrapping.
+            */}
+            <Alert.Content minW="0">
+              <Alert.Title>Invitation created, but not emailed</Alert.Title>
+              <Alert.Description>
+                <Stack gap="3" mt="2">
+                  <Text fontSize="sm">
+                    No mail provider is configured, so send this link to{" "}
+                    <strong>{invite().email}</strong> yourself. It expires in 7 days and only
+                    works for that address.
+                  </Text>
+                  <Box
+                    as="code"
+                    fontFamily="mono"
+                    fontSize="xs"
+                    bg="bg.muted"
+                    p="2"
+                    rounded="l2"
+                    minW="0"
+                    wordBreak="break-all"
+                  >
+                    {invite().url}
+                  </Box>
+                  <Box>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        void navigator.clipboard
+                          .writeText(invite().url)
+                          .then(() => setCopied(true));
+                      }}
+                    >
+                      {copied() ? "Copied" : "Copy link"}
+                    </Button>
+                  </Box>
+                </Stack>
+              </Alert.Description>
+            </Alert.Content>
+          </Alert.Root>
         )}
       </Show>
 
-      <section class="card">
-        <table class="table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Email</th>
-              <th>Role</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            <For each={members.data}>
-              {(m) => (
-                <tr>
-                  <td>{m.fullName ?? "—"}</td>
-                  <td>{m.email}</td>
-                  <td>
-                    <Can
-                      session={session}
-                      orgId={org.id}
-                      permission="members.manage"
-                      fallback={<span class="role-badge">{m.role}</span>}
-                    >
-                      {/*
-                        Disabled for your own row because the server refuses it
-                        outright — editing your own role is escalation by
-                        definition, so the UI should not imply otherwise.
-                      */}
-                      <select
-                        value={m.role}
-                        disabled={m.userId === session.user.id}
-                        onChange={(e) =>
-                          void run(() =>
-                            changeMemberRole({
-                              orgSlug: params().orgSlug,
-                              membershipId: m.membershipId,
-                              role: e.currentTarget.value as AppRole,
-                            }),
-                          )
-                        }
-                      >
-                        <For each={ROLES}>{(r) => <option value={r}>{r}</option>}</For>
-                      </select>
-                    </Can>
-                  </td>
-                  <td class="row-actions">
-                    <Can session={session} orgId={org.id} permission="members.manage">
-                      <button
+      <Card.Root mb="6">
+        <Card.Body p="0">
+          <TableScroll minW="40rem">
+            <Table.Root size="sm">
+              <Table.Head>
+                <Table.Row>
+                  <Table.Header>Name</Table.Header>
+                  <Table.Header>Email</Table.Header>
+                  <Table.Header>Role</Table.Header>
+                  <Table.Header />
+                </Table.Row>
+              </Table.Head>
+              <Table.Body>
+                <For each={members.data}>
+                  {(m) => (
+                    <Table.Row>
+                      <Table.Cell>{m.fullName ?? "—"}</Table.Cell>
+                      {/* An address is one unbroken token, so without
+                          `anywhere` its full length becomes the column's
+                          min-content width and one long address widens the
+                          table by several hundred pixels. */}
+                      <Table.Cell overflowWrap="anywhere">{m.email}</Table.Cell>
+                      <Table.Cell>
+                        <Can
+                          session={session()}
+                          orgId={org().id}
+                          permission="members.manage"
+                          fallback={
+                            <Badge size="sm" variant="outline">
+                              {m.role}
+                            </Badge>
+                          }
+                        >
+                          {/*
+                            Disabled for your own row because the server refuses it
+                            outright — editing your own role is escalation by
+                            definition, so the UI should not imply otherwise.
+                          */}
+                          <RoleSelect
+                            value={m.role}
+                            disabled={m.userId === session().user.id}
+                            onChange={(role) =>
+                              void run(() =>
+                                changeMemberRole({
+                                  orgSlug: params().orgSlug,
+                                  membershipId: m.membershipId,
+                                  role,
+                                }),
+                              )
+                            }
+                          />
+                        </Can>
+                      </Table.Cell>
+                      <Table.Cell textAlign="right">
+                        <Can session={session()} orgId={org().id} permission="members.manage">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            colorPalette="red"
+                            onClick={() =>
+                              void run(() =>
+                                removeMember({
+                                  orgSlug: params().orgSlug,
+                                  membershipId: m.membershipId,
+                                }),
+                              )
+                            }
+                          >
+                            Remove
+                          </Button>
+                        </Can>
+                      </Table.Cell>
+                    </Table.Row>
+                  )}
+                </For>
+              </Table.Body>
+            </Table.Root>
+          </TableScroll>
+        </Card.Body>
+      </Card.Root>
+
+      <Card.Root>
+        <Card.Header>
+          <Card.Title>Pending invitations</Card.Title>
+        </Card.Header>
+        <Card.Body>
+          <Show
+            when={(invitations.data?.length ?? 0) > 0}
+            fallback={<EmptyState title="No pending invitations" />}
+          >
+            <Stack gap="0" divideY="1px" divideColor="border.default">
+              <For each={invitations.data}>
+                {(inv) => (
+                  <HStack justifyContent="space-between" gap="4" py="3">
+                    {/*
+                      `minW="0"` plus the wrap lets a long address fold onto a
+                      second line on a phone rather than pushing Revoke off the
+                      right edge of the card.
+                    */}
+                    <HStack gap="3" flexWrap="wrap" minW="0">
+                      <Text wordBreak="break-word">{inv.email}</Text>
+                      <Badge size="sm" variant="outline">
+                        {inv.role}
+                      </Badge>
+                    </HStack>
+                    <Can session={session()} orgId={org().id} permission="members.manage">
+                      <Button
                         type="button"
-                        class="danger"
+                        variant="ghost"
+                        size="sm"
                         onClick={() =>
                           void run(() =>
-                            removeMember({
+                            revokeInvitation({
                               orgSlug: params().orgSlug,
-                              membershipId: m.membershipId,
+                              invitationId: inv.id,
                             }),
                           )
                         }
                       >
-                        Remove
-                      </button>
+                        Revoke
+                      </Button>
                     </Can>
-                  </td>
-                </tr>
-              )}
-            </For>
-          </tbody>
-        </table>
-      </section>
-
-      <Show when={(invitations.data?.length ?? 0) > 0}>
-        <section class="card">
-          <h2>Pending invitations</h2>
-          <ul class="list">
-            <For each={invitations.data}>
-              {(inv) => (
-                <li>
-                  <span>
-                    {inv.email} · <span class="role-badge">{inv.role}</span>
-                  </span>
-                  <Can session={session} orgId={org.id} permission="members.manage">
-                    <button
-                      type="button"
-                      class="link-button"
-                      onClick={() =>
-                        void run(() =>
-                          revokeInvitation({
-                            orgSlug: params().orgSlug,
-                            invitationId: inv.id,
-                          }),
-                        )
-                      }
-                    >
-                      Revoke
-                    </button>
-                  </Can>
-                </li>
-              )}
-            </For>
-          </ul>
-        </section>
-      </Show>
+                  </HStack>
+                )}
+              </For>
+            </Stack>
+          </Show>
+        </Card.Body>
+      </Card.Root>
     </>
   );
 }

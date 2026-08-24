@@ -1,7 +1,14 @@
 import { useQueryClient } from "@tanstack/solid-query";
 import { createFileRoute, useRouter } from "@tanstack/solid-router";
 import { createSignal, Show } from "solid-js";
+import { Box, Stack } from "styled-system/jsx";
 import { Can } from "~/components/Can";
+import { ErrorBanner, PageHeader, SuccessBanner } from "~/components/page";
+import { Button } from "~/components/ui/button";
+import * as Card from "~/components/ui/card";
+import * as Field from "~/components/ui/field";
+import { Input } from "~/components/ui/input";
+import { Text } from "~/components/ui/text";
 import { exportOrganization, updateOrgSettings } from "~/server/rpc/org";
 
 export const Route = createFileRoute("/_authed/$orgSlug/settings")({
@@ -10,15 +17,21 @@ export const Route = createFileRoute("/_authed/$orgSlug/settings")({
 
 function SettingsPage() {
   const params = Route.useParams();
-  const { org } = Route.useRouteContext()();
+  /*
+   * Accessors, not destructured values. `useRouteContext()` returns a signal,
+   * and this component is reused when only `$orgSlug` changes, so reading it
+   * once at setup would leave the page describing the organization you left.
+   */
+  const context = Route.useRouteContext();
+  const session = () => context().session;
+  const org = () => context().org;
   const queryClient = useQueryClient();
   const router = useRouter();
 
-  const { session } = Route.useRouteContext()();
-
-  const [name, setName] = createSignal(org.name);
+  const [name, setName] = createSignal(org().name);
   const [status, setStatus] = createSignal<string | null>(null);
   const [error, setError] = createSignal<string | null>(null);
+  const [saving, setSaving] = createSignal(false);
   const [exporting, setExporting] = createSignal(false);
   const [exportError, setExportError] = createSignal<string | null>(null);
 
@@ -26,6 +39,7 @@ function SettingsPage() {
     e.preventDefault();
     setError(null);
     setStatus(null);
+    setSaving(true);
     try {
       await updateOrgSettings({ orgSlug: params().orgSlug, name: name() });
       // The org name is part of the session payload, so that cache entry is
@@ -35,6 +49,8 @@ function SettingsPage() {
       setStatus("Saved.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save.");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -71,51 +87,66 @@ function SettingsPage() {
 
   return (
     <>
-      <header class="page-header">
-        <h1>Settings</h1>
-        <p class="muted">
-          Only the <code>org.settings</code> permission reaches this page, and{" "}
-          <code>updateOrgSettings</code> re-checks it server-side regardless.
-        </p>
-      </header>
+      <PageHeader
+        title="Settings"
+        description="Only the org.settings permission reaches this page, and updateOrgSettings re-checks it server-side regardless."
+      />
 
-      <form class="card auth-form" onSubmit={onSubmit}>
-        <label>
-          Organization name
-          <input value={name()} onInput={(e) => setName(e.currentTarget.value)} required />
-        </label>
+      <Card.Root mb="6" maxW="34rem">
+        <Card.Header>
+          <Card.Title>General</Card.Title>
+        </Card.Header>
+        <Card.Body>
+          <form onSubmit={onSubmit}>
+            <Stack gap="4">
+              <Field.Root required>
+                <Field.Label>Organization name</Field.Label>
+                <Input value={name()} onInput={(e) => setName(e.currentTarget.value)} required />
+              </Field.Root>
 
-        <Show when={error()}>
-          <p class="error" role="alert">
-            {error()}
-          </p>
-        </Show>
-        <Show when={status()}>
-          <p class="success">{status()}</p>
-        </Show>
+              <ErrorBanner message={error()} />
+              <SuccessBanner message={status()} />
 
-        <button type="submit">Save</button>
-      </form>
+              <Box>
+                <Button type="submit" loading={saving()}>
+                  Save
+                </Button>
+              </Box>
+            </Stack>
+          </form>
+        </Card.Body>
+      </Card.Root>
 
-      <Can session={session} orgId={org.id} permission="org.export">
-        <section class="card">
-          <h2>Export</h2>
-          <p class="muted">
-            Everything this organization owns, as JSON — members, projects, issues, invitations
-            and the audit trail. Invitation tokens are excluded: an export is a record of who was
-            invited, not a bundle of live credentials.
-          </p>
-
-          <Show when={exportError()}>
-            <p class="error" role="alert">
-              {exportError()}
-            </p>
-          </Show>
-
-          <button type="button" disabled={exporting()} onClick={() => void onExport()}>
-            {exporting() ? "Preparing…" : "Export organization data"}
-          </button>
-        </section>
+      <Can session={session()} orgId={org().id} permission="org.export">
+        <Card.Root maxW="34rem">
+          <Card.Header>
+            <Card.Title>Export</Card.Title>
+            <Card.Description>
+              Everything this organization owns, as JSON — members, projects, issues, invitations
+              and the audit trail. Invitation tokens are excluded: an export is a record of who
+              was invited, not a bundle of live credentials.
+            </Card.Description>
+          </Card.Header>
+          <Card.Body>
+            <Stack gap="4">
+              <ErrorBanner message={exportError()} />
+              <Box>
+                <Button
+                  type="button"
+                  variant="outline"
+                  loading={exporting()}
+                  loadingText="Preparing…"
+                  onClick={() => void onExport()}
+                >
+                  Export organization data
+                </Button>
+              </Box>
+              <Text fontSize="xs" color="fg.muted">
+                Limited to 3 exports per hour for this organization.
+              </Text>
+            </Stack>
+          </Card.Body>
+        </Card.Root>
       </Can>
     </>
   );

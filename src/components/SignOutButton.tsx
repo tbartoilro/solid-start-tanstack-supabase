@@ -1,5 +1,6 @@
 import { useQueryClient } from "@tanstack/solid-query";
 import { useRouter } from "@tanstack/solid-router";
+import { Button } from "~/components/ui/button";
 import { signOut } from "~/server/rpc/auth";
 
 /**
@@ -10,7 +11,7 @@ import { signOut } from "~/server/rpc/auth";
  * all: they landed on /select-org and were stuck there short of clearing
  * cookies. Exactly the state a newly invited or newly registered user is in.
  */
-export function SignOutButton(props: { class?: string }) {
+export function SignOutButton(props: { variant?: "ghost" | "outline" | "link"; size?: "xs" | "sm" | "md" }) {
   const router = useRouter();
   const queryClient = useQueryClient();
 
@@ -25,8 +26,13 @@ export function SignOutButton(props: { class?: string }) {
   }
 
   return (
-    <button type="button" class={props.class} onClick={() => void onSignOut()}>
+    <Button
+      type="button"
+      variant={props.variant ?? "link"}
+      size={props.size ?? "sm"}
+      onClick={() => void onSignOut()}
+    >
       Sign out
-    </button>
+    </Button>
   );
 }

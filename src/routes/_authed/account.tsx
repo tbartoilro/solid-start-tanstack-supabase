@@ -1,7 +1,14 @@
 import { useQueryClient } from "@tanstack/solid-query";
 import { createFileRoute, Link, useRouter } from "@tanstack/solid-router";
+import { createSignal } from "solid-js";
+import { Box, Container, HStack, Stack } from "styled-system/jsx";
+import { ErrorBanner, PageHeader, SuccessBanner } from "~/components/page";
 import { SignOutButton } from "~/components/SignOutButton";
-import { createSignal, Show } from "solid-js";
+import { ThemeToggle } from "~/components/ThemeToggle";
+import { Button } from "~/components/ui/button";
+import * as Card from "~/components/ui/card";
+import * as Field from "~/components/ui/field";
+import { Input } from "~/components/ui/input";
 import { updatePassword } from "~/server/rpc/auth";
 import { changeEmail, reconcileEmail, updateProfile } from "~/server/rpc/profile";
 
@@ -15,15 +22,21 @@ export const Route = createFileRoute("/_authed/account")({
 function AccountPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { session } = Route.useRouteContext()();
+  /*
+   * An accessor, not a destructured value. `useRouteContext()` returns a
+   * signal, and saving the profile invalidates the router — a value pulled out
+   * once at setup would keep reporting the address the page loaded with.
+   */
+  const context = Route.useRouteContext();
+  const session = () => context().session;
 
-  const [fullName, setFullName] = createSignal(session.user.fullName ?? "");
-  const [avatarUrl, setAvatarUrl] = createSignal(session.user.avatarUrl ?? "");
+  const [fullName, setFullName] = createSignal(session().user.fullName ?? "");
+  const [avatarUrl, setAvatarUrl] = createSignal(session().user.avatarUrl ?? "");
   const [profileMsg, setProfileMsg] = createSignal<string | null>(null);
   const [profileErr, setProfileErr] = createSignal<string | null>(null);
   const [profilePending, setProfilePending] = createSignal(false);
 
-  const [email, setEmail] = createSignal(session.user.email);
+  const [email, setEmail] = createSignal(session().user.email);
   const [emailMsg, setEmailMsg] = createSignal<string | null>(null);
   const [emailErr, setEmailErr] = createSignal<string | null>(null);
   const [emailPending, setEmailPending] = createSignal(false);
@@ -86,121 +99,134 @@ function AccountPage() {
   }
 
   return (
-    <>
-      <div class="page-header">
-        <h1>Your account</h1>
-        {/* /account sits outside the $orgSlug shell, so it has no sidebar. */}
-        <Link to="/select-org">Back to organizations</Link> &middot;{" "}
-        <SignOutButton class="link-button" />
-      </div>
+    <Container maxW="42rem" py={{ base: "6", md: "10" }}>
+      <PageHeader
+        title="Your account"
+        description="Settings that follow you across every organization."
+        actions={
+          <HStack gap="3">
+            {/* /account sits outside the $orgSlug shell, so it has no sidebar. */}
+            <Link to="/select-org">Back to organizations</Link>
+            <SignOutButton />
+            <ThemeToggle />
+          </HStack>
+        }
+      />
 
-      <section class="card">
-        <h2>Profile</h2>
-        <form class="auth-form" onSubmit={onSaveProfile}>
-          <label>
-            Full name
-            <input
-              type="text"
-              required
-              maxLength={80}
-              value={fullName()}
-              onInput={(e) => setFullName(e.currentTarget.value)}
-            />
-          </label>
+      <Stack gap="6">
+        <Card.Root>
+          <Card.Header>
+            <Card.Title>Profile</Card.Title>
+          </Card.Header>
+          <Card.Body>
+            <form onSubmit={onSaveProfile}>
+              <Stack gap="4">
+                <Field.Root required>
+                  <Field.Label>Full name</Field.Label>
+                  <Input
+                    type="text"
+                    required
+                    maxLength={80}
+                    value={fullName()}
+                    onInput={(e) => setFullName(e.currentTarget.value)}
+                  />
+                </Field.Root>
 
-          <label>
-            Avatar URL
-            <input
-              type="url"
-              placeholder="https://…"
-              value={avatarUrl()}
-              onInput={(e) => setAvatarUrl(e.currentTarget.value)}
-            />
-          </label>
+                <Field.Root>
+                  <Field.Label>Avatar URL</Field.Label>
+                  <Input
+                    type="url"
+                    placeholder="https://…"
+                    value={avatarUrl()}
+                    onInput={(e) => setAvatarUrl(e.currentTarget.value)}
+                  />
+                </Field.Root>
 
-          <Show when={profileErr()}>
-            <p class="error" role="alert">
-              {profileErr()}
-            </p>
-          </Show>
-          <Show when={profileMsg()}>
-            <p class="success" role="status">
-              {profileMsg()}
-            </p>
-          </Show>
+                <ErrorBanner message={profileErr()} />
+                <SuccessBanner message={profileMsg()} />
 
-          <button type="submit" disabled={profilePending()}>
-            {profilePending() ? "Saving…" : "Save profile"}
-          </button>
-        </form>
-      </section>
+                <Box>
+                  <Button type="submit" loading={profilePending()} loadingText="Saving…">
+                    Save profile
+                  </Button>
+                </Box>
+              </Stack>
+            </form>
+          </Card.Body>
+        </Card.Root>
 
-      <section class="card">
-        <h2>Email</h2>
-        <form class="auth-form" onSubmit={onChangeEmail}>
-          <label>
-            Email
-            <input
-              type="email"
-              autocomplete="email"
-              required
-              value={email()}
-              onInput={(e) => setEmail(e.currentTarget.value)}
-            />
-          </label>
+        <Card.Root>
+          <Card.Header>
+            <Card.Title>Email</Card.Title>
+            <Card.Description>
+              The new address has to confirm the change before it takes effect.
+            </Card.Description>
+          </Card.Header>
+          <Card.Body>
+            <form onSubmit={onChangeEmail}>
+              <Stack gap="4">
+                <Field.Root required>
+                  <Field.Label>Email</Field.Label>
+                  <Input
+                    type="email"
+                    autocomplete="email"
+                    required
+                    value={email()}
+                    onInput={(e) => setEmail(e.currentTarget.value)}
+                  />
+                </Field.Root>
 
-          <Show when={emailErr()}>
-            <p class="error" role="alert">
-              {emailErr()}
-            </p>
-          </Show>
-          <Show when={emailMsg()}>
-            <p class="success" role="status">
-              {emailMsg()}
-            </p>
-          </Show>
+                <ErrorBanner message={emailErr()} />
+                <SuccessBanner message={emailMsg()} />
 
-          <button type="submit" disabled={emailPending() || email() === session.user.email}>
-            {emailPending() ? "Sending…" : "Change email"}
-          </button>
+                <Box>
+                  <Button
+                    type="submit"
+                    loading={emailPending()}
+                    loadingText="Sending…"
+                    disabled={email() === session().user.email}
+                  >
+                    Change email
+                  </Button>
+                </Box>
+              </Stack>
+            </form>
+          </Card.Body>
+        </Card.Root>
 
-          <p class="hint">
-            The new address has to confirm the change before it takes effect.
-          </p>
-        </form>
-      </section>
+        <Card.Root>
+          <Card.Header>
+            <Card.Title>Password</Card.Title>
+          </Card.Header>
+          <Card.Body>
+            <form onSubmit={onChangePassword}>
+              <Stack gap="4">
+                <Field.Root required>
+                  <Field.Label>New password</Field.Label>
+                  <Input
+                    type="password"
+                    autocomplete="new-password"
+                    required
+                    minLength={8}
+                    value={password()}
+                    onInput={(e) => setPassword(e.currentTarget.value)}
+                  />
+                  <Field.HelperText>At least 8 characters.</Field.HelperText>
+                </Field.Root>
 
-      <section class="card">
-        <h2>Password</h2>
-        <form class="auth-form" onSubmit={onChangePassword}>
-          <label>
-            New password
-            <input
-              type="password"
-              autocomplete="new-password"
-              required
-              minLength={8}
-              value={password()}
-              onInput={(e) => setPassword(e.currentTarget.value)}
-            />
-          </label>
+                <ErrorBanner message={pwErr()} />
+                <SuccessBanner message={pwMsg()} />
 
-          <Show when={pwErr()}>
-            <p class="error" role="alert">
-              {pwErr()}
-            </p>
-          </Show>
-          <Show when={pwMsg()}>
-            <p class="success" role="status">
-              {pwMsg()}
-            </p>
-          </Show>
-
-          <button type="submit" disabled={pwPending()}>
-            {pwPending() ? "Saving…" : "Change password"}
-          </button>
-        </form>
-      </section>
-    </>
+                <Box>
+                  <Button type="submit" loading={pwPending()} loadingText="Saving…">
+                    Change password
+                  </Button>
+                </Box>
+              </Stack>
+            </form>
+          </Card.Body>
+        </Card.Root>
+      </Stack>
+    </Container>
   );
 }

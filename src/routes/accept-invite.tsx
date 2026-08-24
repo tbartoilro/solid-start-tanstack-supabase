@@ -1,7 +1,13 @@
 import { useQueryClient } from "@tanstack/solid-query";
 import { createFileRoute, Link, redirect, useRouter } from "@tanstack/solid-router";
 import { createResource, createSignal, Show } from "solid-js";
+import { HStack, Stack } from "styled-system/jsx";
 import { z } from "zod";
+import { CenteredCard, ErrorBanner } from "~/components/page";
+import { Badge } from "~/components/ui/badge";
+import { Button } from "~/components/ui/button";
+import { Spinner } from "~/components/ui/spinner";
+import { Text } from "~/components/ui/text";
 import { acceptInvitation, previewInvitation } from "~/server/rpc/invitations";
 
 const searchSchema = z.object({
@@ -26,7 +32,14 @@ function AcceptInvitePage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const search = Route.useSearch();
-  const { session } = Route.useRouteContext()();
+  /*
+   * An accessor, not a destructured value. `useRouteContext()` returns a
+   * signal, so pulling `session` out of one call freezes the signed-in address
+   * at mount — and the address comparison below decides whether the Join
+   * button is usable at all.
+   */
+  const context = Route.useRouteContext();
+  const session = () => context().session;
 
   const [preview] = createResource(
     () => search().token,
@@ -35,6 +48,13 @@ function AcceptInvitePage() {
 
   const [error, setError] = createSignal<string | null>(null);
   const [pending, setPending] = createSignal(false);
+
+  /** The database enforces this too; checking here just avoids a doomed click. */
+  const addressMismatch = () => {
+    const invite = preview();
+    if (!invite) return false;
+    return invite.email.toLowerCase() !== session()?.user.email.toLowerCase();
+  };
 
   async function onAccept() {
     setError(null);
@@ -55,62 +75,65 @@ function AcceptInvitePage() {
   }
 
   return (
-    <main class="centered">
-      <div class="card">
+    <Show
+      when={preview()}
+      fallback={
         <Show
-          when={preview()}
+          when={!preview.loading}
           fallback={
-            <Show when={!preview.loading} fallback={<p class="muted">Checking the invitation…</p>}>
-              <h1>Invitation not valid</h1>
-              <p class="muted">
-                This link has expired or has already been used. Ask whoever invited you to send
-                a new one.
-              </p>
-              <p class="hint">
-                <Link to="/select-org">Back to your organizations</Link>
-              </p>
-            </Show>
+            <CenteredCard title="Checking the invitation…">
+              <HStack gap="3">
+                <Spinner size="sm" />
+                <Text color="fg.muted">One moment.</Text>
+              </HStack>
+            </CenteredCard>
           }
         >
-          {(invite) => (
-            <>
-              <h1>Join {invite().organizationName}</h1>
-              <p>
-                You were invited as <span class="role-badge">{invite().role}</span>.
-              </p>
-
-              {/*
-                The database compares the invited address against the caller's
-                own before accepting, so a mismatch cannot be accepted at all.
-                Saying so up front beats letting them click and fail.
-              */}
-              <Show when={invite().email.toLowerCase() !== session?.user.email.toLowerCase()}>
-                <p class="error" role="alert">
-                  This invitation was sent to <strong>{invite().email}</strong>, but you are
-                  signed in as <strong>{session?.user.email}</strong>. Sign in with the invited
-                  address to accept it.
-                </p>
-              </Show>
-
-              <Show when={error()}>
-                <p class="error" role="alert">
-                  {error()}
-                </p>
-              </Show>
-
-              <button
-                type="button"
-                disabled={
-                  pending() || invite().email.toLowerCase() !== session?.user.email.toLowerCase()
-                }
-                onClick={onAccept}
-              >
-                {pending() ? "Joining…" : `Join ${invite().organizationName}`}
-              </button>
-            </>
-          )}
+          <CenteredCard
+            title="Invitation not valid"
+            description="This link has expired or has already been used. Ask whoever invited you to send a new one."
+          >
+            <Text fontSize="sm">
+              <Link to="/select-org">Back to your organizations</Link>
+            </Text>
+          </CenteredCard>
         </Show>
-      </div>
-    </main>
+      }
+    >
+      {(invite) => (
+        <CenteredCard title={`Join ${invite().organizationName}`}>
+          <Stack gap="4">
+            <HStack gap="2">
+              <Text>You were invited as</Text>
+              <Badge size="sm">{invite().role}</Badge>
+            </HStack>
+
+            {/*
+              The database compares the invited address against the caller's
+              own before accepting, so a mismatch cannot be accepted at all.
+              Saying so up front beats letting them click and fail.
+            */}
+            <Show when={addressMismatch()}>
+              <ErrorBanner
+                message={`This invitation was sent to ${invite().email}, but you are signed in as ${session()?.user.email}. Sign in with the invited address to accept it.`}
+              />
+            </Show>
+
+            <ErrorBanner message={error()} />
+
+            <Button
+              type="button"
+              loading={pending()}
+              loadingText="Joining…"
+              disabled={addressMismatch()}
+              onClick={onAccept}
+              width="full"
+            >
+              Join {invite().organizationName}
+            </Button>
+          </Stack>
+        </CenteredCard>
+      )}
+    </Show>
   );
 }

@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { solidStart } from "@solidjs/start/config";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import { nitro } from "nitro/vite";
@@ -11,6 +12,15 @@ export default defineConfig({
   // The e2e suite deliberately uses a different port (see playwright.config.ts)
   // so a hand-run dev server and a test run cannot collide.
   server: { port: 4321 },
+
+  // tsconfig `paths` only teaches TypeScript where styled-system lives; Vite
+  // resolves modules independently. Without this the build typechecks cleanly
+  // and then fails at runtime with "Cannot find module 'styled-system/css'".
+  resolve: {
+    alias: {
+      "styled-system": fileURLToPath(new URL("./styled-system", import.meta.url)),
+    },
+  },
   plugins: [
     solidStart({
       // SolidStart's own filesystem router is pointed at `src/api` so that it only

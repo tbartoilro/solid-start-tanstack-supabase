@@ -3,7 +3,7 @@ import { RouterProvider } from "@tanstack/solid-router";
 import { getRequestEvent, isServer } from "solid-js/web";
 import { clientRouter, getQueryClient, type AppRouter } from "./router";
 
-import "./app.css";
+import "./panda.css";
 
 function resolveRouter(): AppRouter {
   if (!isServer) return clientRouter;

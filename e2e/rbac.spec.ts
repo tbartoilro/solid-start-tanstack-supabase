@@ -35,7 +35,7 @@ test.describe("viewer", () => {
 
   test("is not offered a create-project form", async ({ page }) => {
     await page.goto("/acme/projects");
-    await expect(page.locator("form.inline-form")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Create project" })).toHaveCount(0);
   });
 
   // The point of the whole architecture: the UI hiding a control is cosmetic,

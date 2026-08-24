@@ -1,5 +1,10 @@
 import { createRootRouteWithContext, Outlet } from "@tanstack/solid-router";
 import { Suspense } from "solid-js";
+import { Box, Stack } from "styled-system/jsx";
+import { CenteredCard } from "~/components/page";
+import { Button } from "~/components/ui/button";
+import { Spinner } from "~/components/ui/spinner";
+import { Text } from "~/components/ui/text";
 import type { Session } from "~/lib/auth";
 import { sessionQuery } from "~/lib/queries";
 import type { RouterContext } from "~/router";
@@ -23,28 +28,36 @@ export const Route = createRootRouteWithContext<RouterContext>()({
   // page. The message is whatever the RPC boundary judged safe to send — see
   // src/server/on-error.ts — never a raw stack.
   errorComponent: (props) => (
-    <main class="centered">
-      <div class="card">
-        <h1>Something went wrong</h1>
-        <p class="error">{props.error.message}</p>
-        <p>
-          <a href="/">Return to the dashboard</a>
-        </p>
-      </div>
-    </main>
+    <CenteredCard title="Something went wrong">
+      <Stack gap="4">
+        <Text color="fg.error">{props.error.message}</Text>
+        <Box>
+          <Button asChild={(p) => <a {...p()} href="/">Return to the dashboard</a>} />
+        </Box>
+      </Stack>
+    </CenteredCard>
   ),
   notFoundComponent: () => (
-    <main class="centered">
-      <h1>Not found</h1>
-      <p>That page does not exist, or you do not have access to it.</p>
-      <a href="/">Go home</a>
-    </main>
+    <CenteredCard
+      title="Not found"
+      description="That page does not exist, or you do not have access to it."
+    >
+      <Box>
+        <Button asChild={(p) => <a {...p()} href="/">Go home</a>} />
+      </Box>
+    </CenteredCard>
   ),
 });
 
 function RootComponent() {
   return (
-    <Suspense fallback={<div class="centered">Loading…</div>}>
+    <Suspense
+      fallback={
+        <Box minH="100dvh" display="grid" placeItems="center">
+          <Spinner size="lg" />
+        </Box>
+      }
+    >
       <Outlet />
     </Suspense>
   );

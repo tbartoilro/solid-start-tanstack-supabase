@@ -1,6 +1,12 @@
 import { useQueryClient } from "@tanstack/solid-query";
 import { createFileRoute, Link, useRouter } from "@tanstack/solid-router";
 import { createSignal, Show } from "solid-js";
+import { Stack } from "styled-system/jsx";
+import { CenteredCard, ErrorBanner } from "~/components/page";
+import { Button } from "~/components/ui/button";
+import * as Field from "~/components/ui/field";
+import { Input } from "~/components/ui/input";
+import { Text } from "~/components/ui/text";
 import { updatePassword } from "~/server/rpc/auth";
 
 export const Route = createFileRoute("/reset-password")({
@@ -18,7 +24,15 @@ export const Route = createFileRoute("/reset-password")({
 function ResetPasswordPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { session } = Route.useRouteContext()();
+  /*
+   * An accessor, not a destructured value. `useRouteContext()` returns a
+   * signal, so pulling `session` out of one call freezes it at mount — and
+   * every navigation or `router.invalidate()` republishes that context, which
+   * would leave this page showing whichever of the two screens below was
+   * chosen at mount rather than the one the current session calls for.
+   */
+  const context = Route.useRouteContext();
+  const session = () => context().session;
 
   const [password, setPassword] = createSignal("");
   const [error, setError] = createSignal<string | null>(null);
@@ -43,45 +57,43 @@ function ResetPasswordPage() {
   }
 
   return (
-    <main class="centered">
-      <Show
-        when={session}
-        fallback={
-          <div class="card">
-            <h1>This link is no longer valid</h1>
-            <p class="muted">Reset links expire. Request a new one to continue.</p>
-            <p class="hint">
-              <Link to="/forgot-password">Send another reset link</Link>
-            </p>
-          </div>
-        }
-      >
-        <form class="card auth-form" onSubmit={onSubmit}>
-          <h1>Choose a new password</h1>
+    <Show
+      when={session()}
+      fallback={
+        <CenteredCard
+          title="This link is no longer valid"
+          description="Reset links expire. Request a new one to continue."
+        >
+          <Text fontSize="sm">
+            <Link to="/forgot-password">Send another reset link</Link>
+          </Text>
+        </CenteredCard>
+      }
+    >
+      <CenteredCard title="Choose a new password">
+        <form onSubmit={onSubmit}>
+          <Stack gap="4">
+            <Field.Root required>
+              <Field.Label>New password</Field.Label>
+              <Input
+                type="password"
+                autocomplete="new-password"
+                required
+                minLength={8}
+                value={password()}
+                onInput={(e) => setPassword(e.currentTarget.value)}
+              />
+              <Field.HelperText>At least 8 characters.</Field.HelperText>
+            </Field.Root>
 
-          <label>
-            New password
-            <input
-              type="password"
-              autocomplete="new-password"
-              required
-              minLength={8}
-              value={password()}
-              onInput={(e) => setPassword(e.currentTarget.value)}
-            />
-          </label>
+            <ErrorBanner message={error()} />
 
-          <Show when={error()}>
-            <p class="error" role="alert">
-              {error()}
-            </p>
-          </Show>
-
-          <button type="submit" disabled={pending()}>
-            {pending() ? "Saving…" : "Save password"}
-          </button>
+            <Button type="submit" loading={pending()} loadingText="Saving…" width="full">
+              Save password
+            </Button>
+          </Stack>
         </form>
-      </Show>
-    </main>
+      </CenteredCard>
+    </Show>
   );
 }

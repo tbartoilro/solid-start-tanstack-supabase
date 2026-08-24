@@ -11,7 +11,7 @@ permission granularity) instead of letting a CRUD demo dodge them.
 
 ```
 Node 26 · SolidStart 2.0.2 · @tanstack/solid-router 1.170 · @tanstack/solid-query 5
-Supabase (local CLI) · Postgres RLS · Zod 4 · Panda CSS (ready for Park UI)
+Supabase (local CLI) · Postgres RLS · Zod 4 · Park UI (Ark UI + Panda CSS)
 ```
 
 ---
@@ -82,8 +82,8 @@ different directory: `src/api/**` is SolidStart's (HTTP endpoints only), and
 mechanism is not in play when SolidStart owns the document, so out of the box
 every loader re-runs on hydration. TanStack Query is the transfer vehicle:
 loaders go through `ensureQueryData`, the server inlines the dehydrated cache as
-`#__QUERY_STATE__`, and the client rehydrates before mounting. `npm run
-verify:ssr` asserts zero server-function calls on hydration.
+`#__QUERY_STATE__`, and the client rehydrates before mounting. `e2e/ssr.spec.ts`
+asserts zero server-function calls on hydration.
 
 ### Server responsibility, in four layers
 
@@ -112,7 +112,7 @@ Three independent checks, because the first one is not security at all:
 3. **RLS is the backstop.** Every table has RLS on, scoped by `org_id`. If
    layers 1–2 are ever wrong, the database still refuses.
 
-`npm run verify:app` proves point 1 by importing the RPC stubs straight from the
+`e2e/rbac.spec.ts` proves point 1 by importing the RPC stubs straight from the
 page and calling them — exactly what a user with devtools open can do.
 
 ### RBAC: JWT for speed, database for truth
@@ -288,6 +288,19 @@ is worse than no test — so it reports as *skipped* rather than passed, and CI
 fails the build if anything was skipped. If you see skips locally, the database
 is down, not fine.
 
+### Test environment
+
+`.env.test` is committed and loaded by `vite dev --mode test`, which is how the
+Playwright suite runs its server. It exists to set `PUBLIC_APP_URL` to the test
+port, and the reason it is a file rather than an inline variable is worth
+knowing: passing `PUBLIC_APP_URL=... vite dev` on the command line works in CI
+and silently does not work locally. CI has no `.env`, so the shell value is the
+only source; locally Vite loads `.env` into the SSR worker and the shell value
+is lost. The app then mints recovery and invitation links pointing at the dev
+port while the browser is on the test port, the PKCE verifier cookie ends up on
+the wrong origin, and the exchange fails. `.env.[mode]` beats `.env`, so the
+suite behaves identically with or without a developer's `.env`.
+
 ### Browser setup
 
 The end-to-end suite uses `@playwright/test`. It replaced two hand-rolled Chrome
@@ -357,32 +370,65 @@ engineer runs a query".
 
 ---
 
-## Adding Park UI
+## The UI layer — Park UI
 
-Panda CSS is configured and codegen'd; the Park UI CLI is the remaining step.
+Every screen is built from [Park UI](https://park-ui.com) components (Ark UI
+behaviour + Panda CSS styling). There is no hand-written stylesheet: Panda's
+`preflight` is the reset and `src/panda.css` is the only CSS file.
 
-```bash
-npx @park-ui/cli init          # framework: solid
-npx panda codegen
-npx @park-ui/cli add button card table select badge dialog
+```
+src/components/ui/       19 Park UI components, owned by this repo
+src/components/page.tsx  PageHeader, StatTile, ErrorBanner, EmptyState, CenteredCard
+src/components/StatusBadge.tsx  status / priority / issue-key badges
 ```
 
-Already in place so the CLI has nothing to fight:
+Components export namespaced parts, so screens import them either way:
 
-- `panda.config.ts` with `jsxFramework: "solid"` and the **Remove Panda Preset
-  Colors** plugin (Park UI ships its own Radix-based palette; leaving Panda's in
-  place gives you two competing token sets)
-- `postcss.config.cjs`, `styled-system/` codegen, and a `styled-system/*` path alias
-- `@ark-ui/solid` and `lucide-solid` installed
-- `src/panda.css` — the layer entry point, **not yet imported**
+```tsx
+import { Button } from "~/components/ui/button";   // single export
+import * as Card from "~/components/ui/card";      // Root, Header, Body, Title…
+```
 
-**The switch-over:** in `src/app.tsx`, replace `import "./app.css"` with
-`import "./panda.css"`. They are not meant to coexist — Panda's preflight reset
-and `app.css` fight over the same elements.
+### Two things worth knowing before you re-run the CLI
 
-The current markup is deliberately plain and semantic (`.card`, `.table`,
-`.role-badge`, `.status`), so swapping in Park UI components is a substitution
-rather than a rewrite.
+**`@park-ui/cli init` is interactive-only** — no flags, no config file input. The
+setup it would produce is committed instead: `components.json` at the root and
+the `createPreset` wiring in `panda.config.ts`. `@park-ui/cli add <component>`
+*is* scriptable and still works against that config.
+
+**The CLI reports "an unexpected error" but writes the files anyway.** What it
+fails at is fetching transitive registry dependencies, so `button` arrives
+importing a `group` and `loader` that were never downloaded. If you add
+components, close the graph afterwards:
+
+```bash
+cd src/components/ui
+grep -ohE "from '\./[a-z0-9-]+'" *.tsx | sed "s|from './||;s|'||" | sort -u \
+  | while read -r d; do [ -f "$d.tsx" ] || echo "$d"; done
+```
+
+### The Ark v5 bridge
+
+`@park-ui/panda-preset@0.43.1` is built against `@ark-ui/anatomy@3.5.0`, but the
+components the CLI emits target **Ark UI v5**, which added slots and whole
+recipes the preset does not define. Without a bridge, nine components reference
+recipes that do not exist and the build fails.
+
+`panda.config.ts` therefore carries an additive `theme.extend` block supplying
+the missing `dialog` (header/body/footer), `alert` (indicator), `field`
+(requiredIndicator), `select` (indicatorGroup) and `table` (foot) slots, plus
+the `heading`, `group` and `absoluteCenter` recipes and a `spinner`
+`size="inherit"`. **Delete it once the preset catches up to v5** — it is marked
+as such in the file.
+
+### Dark mode
+
+Panda emits dark styles under a `.dark` class, so something has to apply it. An
+inline script in the SSR document head (`src/lib/theme.ts`) reads the stored
+preference, falls back to `prefers-color-scheme`, and sets the class *before the
+stylesheet paints* — putting this in a component effect instead renders light
+first and repaints. `<ThemeToggle>` in the sidebar flips and persists it. The
+script carries the CSP nonce, since `script-src` is strict in production.
 
 > `npm install` warns that esbuild's postinstall is not approved. Panda still
 > works — its platform binary resolves under `@pandacss/config`. If Panda ever

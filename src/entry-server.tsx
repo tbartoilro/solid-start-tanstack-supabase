@@ -3,6 +3,7 @@ import { createHandler, StartServer, type FetchEvent } from "@solidjs/start/serv
 import { dehydrate } from "@tanstack/solid-query";
 import { createMemoryHistory } from "@tanstack/solid-router";
 import { getRequestEvent } from "solid-js/web";
+import { COLOR_MODE_BOOT_SCRIPT } from "./lib/theme";
 import { createRouter, getQueryClient, QUERY_STATE_ID } from "./router";
 
 /**
@@ -72,7 +73,21 @@ export default createHandler(
           <head>
             <meta charset="utf-8" />
             <meta name="viewport" content="width=device-width, initial-scale=1" />
+            {/*
+              A real <title>. Without one the browser falls back to whatever
+              text it can find, which in practice meant picking up the <title>
+              inside a Lucide icon's SVG and showing "Checkmark" as the tab
+              name. Routes refine this via <PageTitle> in src/components/title.tsx.
+            */}
+            <title>Dashboard</title>
             <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+            {/*
+              Applies the `.dark` class before first paint. Must stay ahead of
+              {assets}: once the stylesheet is applied, adding the class later
+              repaints, which is exactly the flash this avoids. Carries the CSP
+              nonce because script-src is strict in production.
+            */}
+            <script nonce={getRequestEvent()?.locals.nonce} innerHTML={COLOR_MODE_BOOT_SCRIPT} />
             {assets}
           </head>
           <body>
