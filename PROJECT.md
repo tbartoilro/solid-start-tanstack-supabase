@@ -24,7 +24,7 @@ Read `.claude/skills/template-architecture/SKILL.md` before touching server code
 
 | Phase | State |
 |---|---|
-| 0. Monorepo migration | ☐ not started |
+| 0. Monorepo migration | ☑ **done** — `9140d40`, `1626c1d`, `989d5f0` |
 | 1. `packages/core` — descriptor types | ☐ not started |
 | 2. `packages/server` — generic query layer + server-side sorting | ☐ not started |
 | 3. `DataTable` component (TanStack v8) | ☐ not started |
@@ -32,7 +32,9 @@ Read `.claude/skills/template-architecture/SKILL.md` before touching server code
 | 5. `packages/codegen` — introspection CLI | ☐ not started |
 | 6. `packages/cli` — component scaffolding | ☐ not started |
 
-**Last known-green baseline:** `f1af2eb` (tag `v0.1.0-reference`, 2026-08-24) — typecheck clean · vitest 67/67 · Playwright 69/69.
+**Last known-green baseline:** `989d5f0` (2026-08-24) — typecheck clean · vitest 67/67 · Playwright **69/69**, verified *after* the monorepo migration and identical to the pre-migration baseline at tag `v0.1.0-reference`.
+
+**Next up:** Phase 1 (`packages/core`). Phase 2's index migration must land *before* sorting is enabled — see the note in that phase.
 
 ---
 
@@ -105,11 +107,31 @@ npm run verify            # typecheck + vitest + playwright
 
 Two commits: one that only moves files, one that only fixes configuration.
 
-- [ ] Tag the flat reference: `git tag -a v0.1.0-reference && git push origin v0.1.0-reference`
-- [ ] Record a green baseline (typecheck + vitest + playwright counts) in **Status** above
-- [ ] `git mv` app → `apps/reference/` (see the table below for what moves)
-- [ ] Root `package.json` → workspace root; app scripts scoped to the workspace
-- [ ] Fix each breakage below; `npm run verify` must return the same counts
+- [x] Tag the flat reference — `v0.1.0-reference`, pushed
+- [x] Record a green baseline — typecheck · 67/67 vitest · 69/69 Playwright
+- [x] `git mv` app → `apps/reference/` (134 renames, history preserved)
+- [x] Root `package.json` → workspace root with passthrough scripts
+- [x] Fix every breakage below; **69/69 again after the move**
+
+What actually bit, for the record:
+
+- **`.gitignore` anchoring.** A pattern containing a slash is anchored to the file's
+  directory, so `e2e/.auth/` and `supabase/.temp/` silently stopped matching. The first
+  holds real session cookies — the next e2e run would have offered them up for commit.
+  Trailing-slash-only patterns (`styled-system/`, `test-results/`) match at any depth and
+  needed nothing.
+- **CI assumed the root** in four places. Fixed with a job-level `working-directory`, with
+  `npm ci` overridden back to the root since only the root has a lockfile.
+- **The Dockerfile moved *back* to the root.** `npm ci` in a workspace needs the root
+  lockfile and every workspace manifest, so the build context is the repository wherever
+  the file sits. Leaving it in `apps/reference` would invite `docker build .` from there,
+  which cannot work.
+- **`prepare` was made an explicit passthrough** rather than trusting npm to run workspace
+  hooks. `styled-system/` is gitignored, so if codegen does not run, every
+  `styled-system/jsx` import fails and the repo is dead. Verified with
+  `rm -rf apps/reference/styled-system && npm install`.
+- **Skills moved to `.claude/skills/`** (verified loading) and the plugin manifest was
+  dropped — it only mattered for distributing them standalone.
 
 **What moves to `apps/reference/`:** `src/ e2e/ supabase/ public/ panda.config.ts
 vite.config.ts vitest.config.ts playwright.config.ts postcss.config.cjs tsconfig.json
@@ -128,6 +150,61 @@ components.json package.json Dockerfile .env.example .env.test`
 | `.github/workflows/ci.yml` | `supabase start`, `npm run typecheck/test/test:e2e/build` all assume root. Add `working-directory: apps/reference` or route through root passthrough scripts. |
 | `Dockerfile` | `COPY . .` + `npm ci` + `npx panda codegen` + `npm run build` assume a flat root. Make workspace-aware. |
 | `.claude/skills/**/SKILL.md` | ~175 citations of `src/…`, `e2e/…`, `supabase/…`. Sweep to `apps/reference/…`. These are the onboarding doc for the next Claude — stale paths make them worse than nothing. |
+
+### Design findings that correct earlier assumptions
+
+Verified against the source. Read these before Phase 1 — three of them delete work the
+plan thought was necessary, and three add work it missed.
+
+**Dissolved.** The "project detail builds the issue key from a separate query" problem is
+not real. `apps/reference/src/server/services/issues.ts:56` already selects
+`projects(id, key, name)`, so `row.project.key` is populated on that page.
+**One descriptor serves both issue tables.**
+
+**Dissolved.** Audit's breakpoint-dependent `maxW={{base,lg,xl}}` needs nothing from the
+descriptor — it sits on an inner `<Box>` *inside* the cell, and `cell` returns arbitrary
+JSX. Audit is the *easiest* of the five, not the hardest.
+
+**A bug to fix while converting.** `$projectId.tsx` hardcodes `page: 1` (lines 26 and 52)
+and renders no `<Pagination>` at all, so a project with more than 25 issues silently hides
+the rest — the same class as the two truncation bugs that motivated this work.
+
+**`rowId` and `idColumn` are different things.** `getRowId` needs a field on the *mapped*
+row (`membershipId` for members); the bulk RPC needs the *physical* PK (`id`). The plan
+conflated them into one `idColumn`.
+
+**`cell()` needs a third argument.** Members' role Select is *disabled-but-visible* on your
+own row — a third state beyond shown/hidden that `cell(row, ctx)` cannot carry. Signature
+is `cell(row, ctx, state)` where `state.disabled` comes from `visible()` returning
+`"disabled"`.
+
+**Three columns cannot be sorted at all**, and the descriptor must be able to say so
+rather than shipping a header that reorders nothing:
+
+| Column | Why |
+|---|---|
+| issues → Assignee | `profiles!issues_assignee_id_fkey` is a **left** join; `!inner` would hide unassigned issues |
+| audit → Actor | same shape; `!inner` would hide system entries, the ones you most want |
+| projects → Open issues | `issues(count)` is an aggregate over an embed — PostgREST cannot ORDER BY it |
+
+**Two sortable columns must not render.** `issues.updated_at` and `memberships.created_at`
+are the current default sorts and have no column. Without a `hidden` flag, `defaultSort`
+can never name the real default. One column (`issues.key`) needs a **compound** sort
+(`projects(key)` then `number`).
+
+**`flexRender` is a trap here.** It routes through Solid's `createComponent`, which runs
+the component body under `untrack`. A cell that reads `ctx()` in its body would silently
+stop updating on an org switch — exactly the bug the accessor-not-destructured comments
+throughout the route files exist to prevent. Call `descriptor.cell` directly inside the JSX
+expression container instead. `createSolidTable` also requires `get data()` **getters**:
+it puts options through `mergeProps`, so a plain `data: rows()` is read once at setup and
+never again.
+
+**Only one column in ~22 needs `visible` + `fallback`** (members' role). Everywhere else
+the existing self-gating components — `IssueStatusSelect`, `IssueAssigneeSelect` — are
+strictly better, because the gate sits next to the mutation it guards. Ship the hatches
+for *generated* columns, where codegen has no hand-written component to hold the gate, but
+**do not refactor the existing controls into them.**
 
 ### Phase 1 — `packages/core`: the descriptor
 
