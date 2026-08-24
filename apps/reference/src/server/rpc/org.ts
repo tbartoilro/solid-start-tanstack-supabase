@@ -1,6 +1,8 @@
 "use server";
 
 import { z } from "zod";
+import { applyList, listSchemaFor } from "@orgadmin/server";
+import { auditResource } from "~/resources/audit";
 import { authenticated, authorize, orgScoped } from "../guard";
 import { notFound } from "../errors";
 import { enforceRateLimit } from "../rate-limit";
@@ -54,24 +56,35 @@ export async function updateOrgSettings(input: unknown) {
   return { ok: true as const };
 }
 
-const auditSchema = orgScoped.extend({
-  page: z.coerce.number().int().min(1).catch(1),
-  pageSize: z.coerce.number().int().min(1).max(100).catch(50),
-});
+/**
+ * Built from the descriptor rather than written out here.
+ *
+ * The page and pageSize clamps are the same as before; what is new is `sort`
+ * and `dir`, and those are the reason this goes through `listSchemaFor` instead
+ * of being extended by hand. `sort` becomes a `z.enum` over the descriptor's
+ * sortable column ids, so an unrecognised value cannot survive parsing — and
+ * `applyList` then resolves the id back through the descriptor, so the string
+ * the caller sent never reaches `.order()`.
+ *
+ * That matters more here than it looks. PostgREST serialises `order` straight
+ * into a query parameter, and the parameter accepts comma-separated lists and
+ * embedded-resource paths — so a column name taken from a request could add a
+ * sort term or reach through a join. Escaping does not address either; an
+ * allowlist does.
+ */
+const auditSchema = listSchemaFor(auditResource, orgScoped);
 
 export async function listAuditLog(input: unknown) {
   const { input: data, ctx } = await authorize("audit.read", auditSchema, input);
 
-  const from = (data.page - 1) * data.pageSize;
-
-  const { data: rows, error, count } = await ctx.db
-    .from("audit_log")
-    .select("id, action, target_type, target_id, metadata, created_at, profiles(full_name, email)", {
-      count: "exact",
-    })
-    .eq("org_id", ctx.orgId)
-    .order("created_at", { ascending: false })
-    .range(from, from + data.pageSize - 1);
+  const { data: rows, error, count } = await applyList(
+    ctx.db
+      .from("audit_log")
+      .select(auditResource.select, { count: "exact" })
+      .eq("org_id", ctx.orgId),
+    auditResource,
+    data,
+  );
 
   if (error) throw new Error(`listAuditLog: ${error.message}`);
 

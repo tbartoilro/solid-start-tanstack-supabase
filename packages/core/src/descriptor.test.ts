@@ -124,9 +124,19 @@ describe("sortableIds", () => {
 });
 
 describe("resolveSort", () => {
+  it("appends no tiebreaker when the sort is already the primary key", () => {
+    const byId = { ...resource, columns: [
+      { id: "id", label: "Id", layout: "primary" as const, sortBy: "id" },
+    ], defaultSort: { column: "id", dir: "asc" as const } };
+    expect(resolveSort(byId as never, "id", "asc")).toEqual([{ expr: "id", ascending: true }]);
+  });
+
   it("resolves a column id to its physical expression", () => {
     expect(resolveSort(resource as never, "title", "asc")).toEqual([
       { expr: "title", ascending: true },
+      // The primary key is appended so ties have a defined order and paging is
+      // deterministic. See the comment in resolveSort.
+      { expr: "id", ascending: true },
     ]);
   });
 
@@ -134,6 +144,7 @@ describe("resolveSort", () => {
     expect(resolveSort(resource as never, "key", "desc")).toEqual([
       { expr: "projects(key)", ascending: false },
       { expr: "number", ascending: false },
+      { expr: "id", ascending: false },
     ]);
   });
 
@@ -168,6 +179,7 @@ describe("resolveSort", () => {
       const terms = resolveSort(resource as never, attempt, "asc");
       expect(terms, `input ${JSON.stringify(attempt)} was not rejected`).toEqual([
         { expr: "updated_at", ascending: true },
+        { expr: "id", ascending: true },
       ]);
     }
   });
@@ -175,12 +187,14 @@ describe("resolveSort", () => {
   it("falls back to the descriptor's direction for a bogus direction", () => {
     expect(resolveSort(resource as never, "title", "sideways")).toEqual([
       { expr: "title", ascending: false }, // defaultSort.dir is "desc"
+      { expr: "id", ascending: false },
     ]);
   });
 
   it("refuses a column that exists but is not sortable", () => {
     expect(resolveSort(resource as never, "assignee", "asc")).toEqual([
       { expr: "updated_at", ascending: true },
+      { expr: "id", ascending: true },
     ]);
   });
 });

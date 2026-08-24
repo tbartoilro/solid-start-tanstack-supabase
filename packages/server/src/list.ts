@@ -4,7 +4,7 @@ import {
   resolveSort,
   searchableExprs,
   sortableIds,
-  type ResourceDescriptor,
+  type DescriptorShape,
 } from "@orgadmin/core";
 import { z } from "zod";
 
@@ -35,8 +35,6 @@ export interface ListQuery<TSelf> {
   range(from: number, to: number): TSelf;
 }
 
-type AnyDescriptor = ResourceDescriptor<never, never, never>;
-
 /** What `listSchemaFor` guarantees a handler receives. */
 export interface ListInput {
   page: number;
@@ -62,9 +60,9 @@ export interface ListInput {
  * `pageSize`'s ceiling is not decoration: these are public HTTP endpoints, so a
  * limit the UI happens to respect is not a limit.
  */
-export function listSchemaFor<TBase extends z.ZodObject<z.ZodRawShape>>(
-  d: AnyDescriptor,
-  base: TBase,
+export function listSchemaFor<TShape extends z.ZodRawShape>(
+  d: DescriptorShape,
+  base: z.ZodObject<TShape>,
 ) {
   const ids = sortableIds(d);
   if (ids.length === 0) {
@@ -92,7 +90,7 @@ export function listSchemaFor<TBase extends z.ZodObject<z.ZodRawShape>>(
  */
 export function applyList<TSelf extends ListQuery<TSelf>>(
   query: TSelf,
-  d: AnyDescriptor,
+  d: DescriptorShape,
   input: ListInput,
 ): TSelf {
   let out = query;

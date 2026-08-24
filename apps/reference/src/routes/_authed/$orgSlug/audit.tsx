@@ -3,6 +3,7 @@ import { createFileRoute, useNavigate } from "@tanstack/solid-router";
 import { For, Show } from "solid-js";
 import { Box } from "styled-system/jsx";
 import { z } from "zod";
+import { totalPages as pages } from "@orgadmin/core";
 import { Pagination, ResponsiveTable } from "~/components/data";
 import { EmptyState, PageHeader } from "~/components/page";
 import { Badge } from "~/components/ui/badge";
@@ -10,12 +11,26 @@ import * as Card from "~/components/ui/card";
 import * as Table from "~/components/ui/table";
 import { Text } from "~/components/ui/text";
 import { auditQuery } from "~/lib/queries";
+import { auditResource, AUDIT_SORTS, type AuditSort } from "~/resources/audit";
+import { SortableHeader } from "~/components/SortableHeader";
+
+/**
+ * The sort lives in the URL, like the page already does, so an ordering is
+ * something you can link to and come back to. `.catch()` on every field keeps a
+ * hand-edited URL renderable — the enum is generated from the descriptor, so a
+ * value the server would refuse cannot be written here without a type error.
+ */
+const searchSchema = z.object({
+  page: z.coerce.number().int().min(1).catch(1),
+  sort: z.enum(AUDIT_SORTS).catch(auditResource.defaultSort.column as AuditSort),
+  dir: z.enum(["asc", "desc"]).catch(auditResource.defaultSort.dir),
+});
 
 export const Route = createFileRoute("/_authed/$orgSlug/audit")({
-  validateSearch: z.object({ page: z.coerce.number().int().min(1).catch(1) }),
+  validateSearch: searchSchema,
   loaderDeps: ({ search }) => search,
   loader: ({ context, params, deps }) =>
-    context.queryClient.ensureQueryData(auditQuery(params.orgSlug, deps.page)),
+    context.queryClient.ensureQueryData(auditQuery(params.orgSlug, deps)),
   component: AuditPage,
 });
 
@@ -24,10 +39,17 @@ function AuditPage() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
 
-  const audit = useQuery(() => auditQuery(params().orgSlug, search().page));
+  const audit = useQuery(() => auditQuery(params().orgSlug, search()));
 
-  const totalPages = () =>
-    Math.max(1, Math.ceil((audit.data?.total ?? 0) / (audit.data?.pageSize ?? 50)));
+  const totalPages = () => pages(audit.data?.total ?? 0, audit.data?.pageSize ?? 50);
+
+  /*
+   * Changing the sort resets to page 1. Staying on page 9 of a re-ordered list
+   * shows rows with no relationship to what was on screen a moment ago, which
+   * reads as data loss rather than a re-sort.
+   */
+  const setSort = (next: { column: string; dir: "asc" | "desc" }) =>
+    void navigate({ search: { page: 1, sort: next.column as AuditSort, dir: next.dir } });
 
   return (
     <>
@@ -46,10 +68,16 @@ function AuditPage() {
               <Table.Root size="sm">
                 <Table.Head>
                   <Table.Row>
-                    <Table.Header>When</Table.Header>
-                    <Table.Header>Actor</Table.Header>
-                    <Table.Header>Action</Table.Header>
-                    <Table.Header>Details</Table.Header>
+                    <For each={auditResource.columns}>
+                      {(column) => (
+                        <SortableHeader
+                          column={column}
+                          sort={() => search().sort}
+                          dir={() => search().dir}
+                          onSort={setSort}
+                        />
+                      )}
+                    </For>
                   </Table.Row>
                 </Table.Head>
                 <Table.Body>

@@ -1,11 +1,9 @@
-import type { BulkOutcome, ResourceDescriptor } from "@orgadmin/core";
+import type { BulkOutcome } from "@orgadmin/core";
 import { z } from "zod";
 
 /**
  * Validating and running a bulk request.
  */
-
-type AnyDescriptor = ResourceDescriptor<never, never, never>;
 
 /**
  * How many rows one request may name.
@@ -23,16 +21,16 @@ export const BULK_MAX_IDS = 500;
  * single shared uuid check would reject every id it sends, and a shared string
  * check would accept nonsense for the others — so this follows the descriptor.
  */
-export function idSchemaFor(d: AnyDescriptor): z.ZodType<string> {
+export function idSchemaFor(d: { idType: "uuid" | "bigint" }): z.ZodType<string> {
   return d.idType === "bigint"
     ? z.coerce.string().regex(/^\d+$/, "Expected a numeric id.")
     : z.guid();
 }
 
 /** The bulk request schema for a resource, extending the app's tenancy base. */
-export function bulkSchemaFor<TBase extends z.ZodObject<z.ZodRawShape>>(
-  d: AnyDescriptor,
-  base: TBase,
+export function bulkSchemaFor<TShape extends z.ZodRawShape>(
+  d: { idType: "uuid" | "bigint" },
+  base: z.ZodObject<TShape>,
 ) {
   return base.extend({
     ids: z.array(idSchemaFor(d)).min(1).max(BULK_MAX_IDS),

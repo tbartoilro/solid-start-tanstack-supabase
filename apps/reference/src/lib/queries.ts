@@ -2,6 +2,7 @@ import { queryOptions } from "@tanstack/solid-query";
 import { getSession } from "~/server/rpc/auth";
 import { listIssues } from "~/server/rpc/issues";
 import { listAllMembers, listInvitations, listMembers } from "~/server/rpc/members";
+import type { AuditSort } from "~/resources/audit";
 import { listAuditLog } from "~/server/rpc/org";
 import { getProject, listAllProjects, listProjects } from "~/server/rpc/projects";
 
@@ -98,8 +99,18 @@ export const invitationsQuery = (orgSlug: string) =>
     queryFn: () => listInvitations({ orgSlug }),
   });
 
-export const auditQuery = (orgSlug: string, page: number) =>
+export interface AuditFilters {
+  page: number;
+  sort: AuditSort;
+  dir: "asc" | "desc";
+}
+
+/**
+ * The sort is part of the key, because it is part of the request. Leaving it
+ * out would serve a differently-ordered page from cache under the same key.
+ */
+export const auditQuery = (orgSlug: string, filters: AuditFilters) =>
   queryOptions({
-    queryKey: ["audit", orgSlug, page] as const,
-    queryFn: () => listAuditLog({ orgSlug, page }),
+    queryKey: ["audit", orgSlug, filters] as const,
+    queryFn: () => listAuditLog({ orgSlug, ...filters }),
   });

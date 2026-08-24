@@ -25,8 +25,8 @@ Read `.claude/skills/template-architecture/SKILL.md` before touching server code
 | Phase | State |
 |---|---|
 | 0. Monorepo migration | ☑ **done** — `9140d40`, `1626c1d`, `989d5f0` |
-| 1. `packages/core` — descriptor types | ☐ not started |
-| 2. `packages/server` — generic query layer + server-side sorting | ☐ not started |
+| 1. `packages/core` — descriptor types | ☑ **done** — `8282f81` |
+| 2. `packages/server` + sorting | ◐ **in progress** — packages and indexes in `b92cac8`; audit log wired and sorting verified end to end. Remaining: the other four lists. |
 | 3. `DataTable` component (TanStack v8) | ☐ not started |
 | 4. Bulk actions + audit CSV | ☐ not started |
 | 5. `packages/codegen` — introspection CLI | ☐ not started |
@@ -34,7 +34,7 @@ Read `.claude/skills/template-architecture/SKILL.md` before touching server code
 
 **Last known-green baseline:** `989d5f0` (2026-08-24) — typecheck clean · vitest 67/67 · Playwright **69/69**, verified *after* the monorepo migration and identical to the pre-migration baseline at tag `v0.1.0-reference`.
 
-**Next up:** Phase 1 (`packages/core`). Phase 2's index migration must land *before* sorting is enabled — see the note in that phase.
+**Next up:** finish Phase 2 by routing the issues, projects and members lists through `listSchemaFor`/`applyList` the way `listAuditLog` now is, then Phase 3.
 
 ---
 
@@ -150,6 +150,34 @@ components.json package.json Dockerfile .env.example .env.test`
 | `.github/workflows/ci.yml` | `supabase start`, `npm run typecheck/test/test:e2e/build` all assume root. Add `working-directory: apps/reference` or route through root passthrough scripts. |
 | `Dockerfile` | `COPY . .` + `npm ci` + `npx panda codegen` + `npm run build` assume a flat root. Make workspace-aware. |
 | `.claude/skills/**/SKILL.md` | ~175 citations of `src/…`, `e2e/…`, `supabase/…`. Sweep to `apps/reference/…`. These are the onboarding doc for the next Claude — stale paths make them worse than nothing. |
+
+### Found while building Phase 2
+
+**Offset paging over a non-unique sort key is not stable.** Ties have no defined
+order, so the database may return a row on two pages or on neither. Ordering the
+audit log by `action` makes this likely rather than theoretical: 67 of 108 rows
+share `member.added`. `resolveSort` therefore appends the primary key as a final
+tiebreaker on every sort, which gives every row a total order. Skipped when the
+key is already among the terms so nothing is ordered by twice.
+
+**Declaration merging cannot narrow a declared property.** The registry pattern
+needs an *empty* interface plus a conditional fallback
+(`ResourceRegistry extends { permission: infer P } ? P : string`). Declaring
+`permission: string` and augmenting it with a union is a `TS2717`.
+
+**`ResourceDescriptor<never, never, never>` does not accept a real descriptor** —
+`cellProps?: never` makes every real column unassignable. The helpers take a
+narrow structural `DescriptorShape` instead, which needs no cast at the call
+site and documents exactly what they depend on.
+
+**The index measurement is more nuanced than expected.** The ordered plan the
+index enables reads 25 rows with no sort node against 703 read and top-N sorted
+without it — but the planner does not choose it at this data scale, and it is
+right not to. Details in the migration's own comment.
+
+**`const`-inferred columns cannot be filtered on `sortBy` in app code.** The
+union has members without the property, so reading it is a type error. Use
+`sortableIds()` from core.
 
 ### Design findings that correct earlier assumptions
 

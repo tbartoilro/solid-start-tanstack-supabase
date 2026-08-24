@@ -14,6 +14,7 @@ import * as Menu from "~/components/ui/menu";
 import { Text } from "~/components/ui/text";
 import { can, type SessionOrg } from "~/lib/auth";
 import { setActiveOrg } from "~/server/rpc/auth";
+import { AUDIT_DEFAULT_SEARCH } from "~/resources/audit";
 
 /**
  * Tenant scope for everything beneath it.
@@ -228,7 +229,7 @@ function OrgLayout() {
             </Link>
           </Show>
           <Show when={can(session(), org().id, "audit.read")}>
-            <Link to="/$orgSlug/audit" params={{ orgSlug: org().slug }} search={{ page: 1 }} class={navLink}>
+            <Link to="/$orgSlug/audit" params={{ orgSlug: org().slug }} search={AUDIT_DEFAULT_SEARCH} class={navLink}>
               Audit log
             </Link>
           </Show>

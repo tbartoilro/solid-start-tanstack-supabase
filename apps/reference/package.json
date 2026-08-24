@@ -23,6 +23,8 @@
   },
   "dependencies": {
     "@ark-ui/solid": "^5.38.2",
+    "@orgadmin/core": "*",
+    "@orgadmin/server": "*",
     "@solidjs/router": "^1.0.0",
     "@solidjs/start": "^2.0.2",
     "@supabase/ssr": "^0.12.4",

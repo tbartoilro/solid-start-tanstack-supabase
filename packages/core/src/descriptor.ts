@@ -31,12 +31,16 @@
  * }
  * ```
  */
-export interface ResourceRegistry {
-  permission: string;
-}
+// Intentionally empty. Declaration merging cannot *narrow* a declared property
+// — TypeScript requires each declaration to agree — so the default lives in the
+// conditional below rather than in the interface.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface ResourceRegistry {}
 
-/** The app's permission union once narrowed, otherwise `string`. */
-export type Permission = ResourceRegistry["permission"];
+/** The app's permission union once the registry is augmented, otherwise `string`. */
+export type Permission = ResourceRegistry extends { permission: infer P extends string }
+  ? P
+  : string;
 
 /**
  * Whatever the UI layer renders. Core never inspects it, so it stays `unknown`
@@ -277,6 +281,30 @@ export type SortableId<D extends { columns: readonly { id: string }[] }> =
 /** The row type a descriptor describes. */
 export type RowOf<D> = D extends ResourceDescriptor<infer TRow, never, never> ? TRow : never;
 
+/**
+ * Exactly what the sorting, search and pagination helpers read from a
+ * descriptor.
+ *
+ * They take this rather than `ResourceDescriptor<...>` so a caller never has to
+ * cast. Naming a concrete row type would force one, and filling the parameters
+ * with `never` does not work either — `cellProps?: never` makes every real
+ * column unassignable. It also keeps the coupling honest: anything not listed
+ * here is something those helpers provably do not depend on.
+ */
+export interface DescriptorShape {
+  readonly name: string;
+  /** The primary key, used as the sort tiebreaker. See `resolveSort`. */
+  readonly idColumn: string;
+  readonly defaultSort: { readonly column: string; readonly dir: SortDir };
+  readonly pageSize: number;
+  readonly columns: readonly {
+    readonly id: string;
+    readonly layout?: CellLayout;
+    readonly sortBy?: SortExpr | readonly SortExpr[];
+    readonly searchAs?: string;
+  }[];
+}
+
 const SORT_EXPR_RE = /^[a-z_][a-z0-9_]*(\([a-z_][a-z0-9_]*\))?$/;
 
 /** Exported for the server's own tests; the boundary itself is `resolveSort`. */
@@ -294,7 +322,7 @@ export { SORT_EXPR_RE };
  * boundary; that is `resolveSort`, which only ever returns expressions it read
  * out of a descriptor in the first place.
  */
-export function assertDescriptor(d: ResourceDescriptor<never, never, never>): void {
+export function assertDescriptor(d: DescriptorShape): void {
   const where = `resource "${d.name}"`;
 
   const ids = d.columns.map((c) => c.id);
@@ -371,7 +399,7 @@ export function defineResource<
   TCellProps extends object = Record<string, unknown>,
 >() {
   return <const D extends ResourceDescriptor<TRow, TCtx, TCellProps>>(descriptor: D): D => {
-    assertDescriptor(descriptor as unknown as ResourceDescriptor<never, never, never>);
+    assertDescriptor(descriptor);
     return descriptor;
   };
 }

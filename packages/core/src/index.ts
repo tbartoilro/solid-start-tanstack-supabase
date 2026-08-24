@@ -7,6 +7,7 @@ export {
   type CellLayout,
   type CellOutput,
   type CellState,
+  type DescriptorShape,
   type Permission,
   type ResourceColumn,
   type ResourceDescriptor,

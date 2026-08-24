@@ -137,7 +137,10 @@ describe("applyList", () => {
   it("orders, then ranges", () => {
     const q = recorder();
     applyList(q, issues as never, { ...base });
-    expect(q.orders).toEqual([["updated_at", { ascending: false }]]);
+    expect(q.orders).toEqual([
+      ["updated_at", { ascending: false }],
+      ["id", { ascending: false }],
+    ]);
     expect(q.ranges).toEqual([[0, 24]]);
   });
 
@@ -147,6 +150,7 @@ describe("applyList", () => {
     expect(q.orders).toEqual([
       ["projects(key)", { ascending: true }],
       ["number", { ascending: true }],
+      ["id", { ascending: true }],
     ]);
   });
 
@@ -190,6 +194,7 @@ describe("applyList", () => {
       applyList(q, issues as never, { ...base, sort, dir: "asc" });
       expect(q.orders, `"${sort}" reached order()`).toEqual([
         ["updated_at", { ascending: true }],
+        ["id", { ascending: true }],
       ]);
     }
   });

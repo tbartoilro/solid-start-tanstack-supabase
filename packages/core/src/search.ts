@@ -1,4 +1,4 @@
-import type { ResourceDescriptor } from "./descriptor.js";
+import type { DescriptorShape } from "./descriptor.js";
 
 /**
  * Text search across a resource's searchable columns.
@@ -24,7 +24,7 @@ export function escapeLike(input: string): string {
 }
 
 /** The `ilike` targets a resource searches, in column order. */
-export function searchableExprs(d: ResourceDescriptor<never, never, never>): string[] {
+export function searchableExprs(d: DescriptorShape): string[] {
   return d.columns
     .map((c) => c.searchAs)
     .filter((expr): expr is string => typeof expr === "string");
