@@ -3,14 +3,19 @@ import { createFileRoute } from "@tanstack/solid-router";
 import { createSignal, For, Show } from "solid-js";
 import { Can } from "~/components/Can";
 import { CreateBar, ResponsiveTable } from "~/components/data";
+import {
+  IssueAssigneeSelect,
+  IssueRowActions,
+  IssueStatusSelect,
+} from "~/components/IssueControls";
 import { EmptyState, ErrorBanner, PageHeader } from "~/components/page";
-import { IssueKey, PriorityBadge, StatusBadge } from "~/components/StatusBadge";
+import { IssueKey, PriorityBadge } from "~/components/StatusBadge";
 import { Button } from "~/components/ui/button";
 import * as Card from "~/components/ui/card";
 import * as Field from "~/components/ui/field";
 import { Input } from "~/components/ui/input";
 import * as Table from "~/components/ui/table";
-import { issuesQuery, projectQuery } from "~/lib/queries";
+import { allMembersQuery, issuesQuery, projectQuery } from "~/lib/queries";
 import { createIssue } from "~/server/rpc/issues";
 
 export const Route = createFileRoute("/_authed/$orgSlug/projects/$projectId")({
@@ -20,6 +25,10 @@ export const Route = createFileRoute("/_authed/$orgSlug/projects/$projectId")({
       context.queryClient.ensureQueryData(
         issuesQuery(params.orgSlug, { projectId: params.projectId, page: 1 }),
       ),
+      // Prefetched with the rest so the assignee pickers are populated on first
+      // paint rather than filling in a beat after the table renders. Every role
+      // that can reach this page also holds members.read.
+      context.queryClient.ensureQueryData(allMembersQuery(params.orgSlug)),
     ]);
   },
   component: ProjectDetail,
@@ -42,10 +51,30 @@ function ProjectDetail() {
   const issues = useQuery(() =>
     issuesQuery(params().orgSlug, { projectId: params().projectId, page: 1 }),
   );
+  /*
+   * Every member, not `membersQuery`: that one is paged, and a picker showing
+   * only the first page would silently make everyone after it unassignable.
+   */
+  const members = useQuery(() => allMembersQuery(params().orgSlug));
 
   const [title, setTitle] = createSignal("");
   const [error, setError] = createSignal<string | null>(null);
   const [pending, setPending] = createSignal(false);
+
+  /*
+   * Prefix invalidation rather than this table's exact key: the same issue is
+   * cached again under the cross-project list's filters, and refetching only
+   * the view in front of you leaves those showing the row as it was. The
+   * project query goes too — its open-issue count moves with a status change
+   * or a deletion.
+   */
+  async function refresh() {
+    setError(null);
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["issues", params().orgSlug] }),
+      queryClient.invalidateQueries({ queryKey: ["project", params().orgSlug] }),
+    ]);
+  }
 
   async function onCreate(e: SubmitEvent) {
     e.preventDefault();
@@ -58,8 +87,7 @@ function ProjectDetail() {
         title: title(),
       });
       setTitle("");
-      await queryClient.invalidateQueries({ queryKey: ["issues", params().orgSlug] });
-      await queryClient.invalidateQueries({ queryKey: ["project", params().orgSlug] });
+      await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create the issue.");
     } finally {
@@ -135,6 +163,7 @@ function ProjectDetail() {
                     <Table.Header>Status</Table.Header>
                     <Table.Header>Priority</Table.Header>
                     <Table.Header>Assignee</Table.Header>
+                    <Table.Header />
                   </Table.Row>
                 </Table.Head>
                 <Table.Body>
@@ -154,14 +183,45 @@ function ProjectDetail() {
                         <Table.Cell data-primary overflowWrap="anywhere">
                           {issue.title}
                         </Table.Cell>
+                        {/*
+                          The two pickers fall back to the badge and the plain
+                          name they replaced, so a reader without the permission
+                          sees the same column they always did rather than a
+                          disabled control they cannot use.
+                        */}
                         <Table.Cell data-label="Status">
-                          <StatusBadge status={issue.status} />
+                          <IssueStatusSelect
+                            issue={issue}
+                            session={session()}
+                            org={org()}
+                            orgSlug={params().orgSlug}
+                            onDone={refresh}
+                            onError={setError}
+                          />
                         </Table.Cell>
                         <Table.Cell data-label="Priority">
                           <PriorityBadge priority={issue.priority} />
                         </Table.Cell>
                         <Table.Cell data-label="Assignee">
-                          {issue.assignee?.fullName ?? issue.assignee?.email ?? "—"}
+                          <IssueAssigneeSelect
+                            issue={issue}
+                            members={members.data ?? []}
+                            session={session()}
+                            org={org()}
+                            orgSlug={params().orgSlug}
+                            onDone={refresh}
+                            onError={setError}
+                          />
+                        </Table.Cell>
+                        <Table.Cell data-actions textAlign="right">
+                          <IssueRowActions
+                            issue={issue}
+                            session={session()}
+                            org={org()}
+                            orgSlug={params().orgSlug}
+                            onDone={refresh}
+                            onError={setError}
+                          />
                         </Table.Cell>
                       </Table.Row>
                     )}

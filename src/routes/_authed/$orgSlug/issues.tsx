@@ -1,14 +1,23 @@
 import { createListCollection } from "@ark-ui/solid/select";
-import { useQuery } from "@tanstack/solid-query";
+import { useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createFileRoute, useNavigate } from "@tanstack/solid-router";
 import { ChevronsUpDown } from "lucide-solid";
-import { createMemo, For, Show } from "solid-js";
+import { createMemo, createSignal, For, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { Stack, Wrap } from "styled-system/jsx";
 import { z } from "zod";
 import { FilterBar, Pagination, ResponsiveTable } from "~/components/data";
-import { EmptyState, PageHeader } from "~/components/page";
-import { IssueKey, PriorityBadge, StatusBadge } from "~/components/StatusBadge";
+import {
+  ISSUE_STATUSES,
+  IssueAssigneeSelect,
+  IssueFormDialog,
+  IssueRowActions,
+  IssueStatusSelect,
+  STATUS_LABEL,
+} from "~/components/IssueControls";
+import { EmptyState, ErrorBanner, PageHeader } from "~/components/page";
+import { IssueKey, PriorityBadge } from "~/components/StatusBadge";
+import { Button } from "~/components/ui/button";
 import * as Card from "~/components/ui/card";
 import * as Checkbox from "~/components/ui/checkbox";
 import * as Field from "~/components/ui/field";
@@ -16,18 +25,12 @@ import { Input } from "~/components/ui/input";
 import * as Select from "~/components/ui/select";
 import * as Table from "~/components/ui/table";
 import { Text } from "~/components/ui/text";
-import { issuesQuery, projectsQuery, type IssueFilters } from "~/lib/queries";
-
-const STATUSES = ["backlog", "todo", "in_progress", "in_review", "done", "cancelled"] as const;
-
-const STATUS_LABEL: Record<(typeof STATUSES)[number], string> = {
-  backlog: "Backlog",
-  todo: "Todo",
-  in_progress: "In progress",
-  in_review: "In review",
-  done: "Done",
-  cancelled: "Cancelled",
-};
+import {
+  allMembersQuery,
+  issuesQuery,
+  projectsQuery,
+  type IssueFilters,
+} from "~/lib/queries";
 
 /**
  * Filter state lives in the URL rather than component state, so a filtered view
@@ -39,7 +42,7 @@ const STATUS_LABEL: Record<(typeof STATUSES)[number], string> = {
  */
 const searchSchema = z.object({
   project: z.guid().optional(),
-  status: z.array(z.enum(STATUSES)).optional(),
+  status: z.array(z.enum(ISSUE_STATUSES)).optional(),
   q: z.string().trim().max(200).optional(),
   page: z.coerce.number().int().min(1).catch(1),
 });
@@ -59,6 +62,10 @@ export const Route = createFileRoute("/_authed/$orgSlug/issues")({
     await Promise.all([
       context.queryClient.ensureQueryData(issuesQuery(params.orgSlug, filters)),
       context.queryClient.ensureQueryData(projectsQuery(params.orgSlug, 1)),
+      // Prefetched alongside the rest so the assignee pickers are populated on
+      // first paint rather than filling in a beat after the table renders.
+      // Every role that can reach this page also holds members.read.
+      context.queryClient.ensureQueryData(allMembersQuery(params.orgSlug)),
     ]);
   },
   component: IssuesPage,
@@ -73,6 +80,16 @@ function IssuesPage() {
   const params = Route.useParams();
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
+  /*
+   * Accessors, not destructured values. `useRouteContext()` returns a signal,
+   * and this route does not remount when only `$orgSlug` changes — reading it
+   * once at setup would leave the permission gates on every row judging the
+   * organization the user switched away from.
+   */
+  const context = Route.useRouteContext();
+  const session = () => context().session;
+  const org = () => context().org;
+  const queryClient = useQueryClient();
 
   const filters = (): IssueFilters => ({
     projectId: search().project,
@@ -83,6 +100,19 @@ function IssuesPage() {
 
   const issues = useQuery(() => issuesQuery(params().orgSlug, filters()));
   const projects = useQuery(() => projectsQuery(params().orgSlug, 1));
+  const members = useQuery(() => allMembersQuery(params().orgSlug));
+
+  const [error, setError] = createSignal<string | null>(null);
+
+  /*
+   * Prefix invalidation, not the exact key: every filter combination is its own
+   * cache entry, so refetching only the view in front of you leaves the others
+   * showing the row as it was before the edit.
+   */
+  async function refresh() {
+    setError(null);
+    await queryClient.invalidateQueries({ queryKey: ["issues", params().orgSlug] });
+  }
 
   const projectCollection = createMemo(() =>
     createListCollection({
@@ -106,7 +136,31 @@ function IssuesPage() {
       <PageHeader
         title="Issues"
         description="Filters live in the URL, so any view here is linkable and survives a reload."
+        actions={
+          /*
+            This screen spans projects, so the dialog has to ask which one the
+            issue belongs to — unlike the same control on a project's own page.
+            It renders nothing without issues.write, which is also what
+            createIssue() checks server-side.
+          */
+          <IssueFormDialog
+            mode="create"
+            projects={projects.data?.projects ?? []}
+            session={session()}
+            org={org()}
+            orgSlug={params().orgSlug}
+            onDone={refresh}
+            onError={setError}
+            trigger={(triggerProps) => (
+              <Button {...triggerProps()} type="button" size="sm">
+                New issue
+              </Button>
+            )}
+          />
+        }
       />
+
+      <ErrorBanner message={error()} />
 
       <Card.Root mb="6">
           {/*
@@ -180,7 +234,7 @@ function IssuesPage() {
                 Status
               </Text>
               <Wrap columnGap="4" rowGap="2" role="group" aria-labelledby={STATUS_GROUP_LABEL_ID}>
-                <For each={STATUSES}>
+                <For each={ISSUE_STATUSES}>
                   {(s) => (
                     <Checkbox.Root
                       size="sm"
@@ -227,6 +281,7 @@ function IssuesPage() {
                     <Table.Header>Status</Table.Header>
                     <Table.Header>Priority</Table.Header>
                     <Table.Header>Assignee</Table.Header>
+                    <Table.Header />
                   </Table.Row>
                 </Table.Head>
                 <Table.Body>
@@ -253,14 +308,45 @@ function IssuesPage() {
                         <Table.Cell data-primary overflowWrap="anywhere">
                           {issue.title}
                         </Table.Cell>
+                        {/*
+                          The two pickers fall back to the badge and the plain
+                          name they replaced, so a reader without the permission
+                          sees the same column they always did rather than a
+                          disabled control they cannot use.
+                        */}
                         <Table.Cell data-label="Status">
-                          <StatusBadge status={issue.status} />
+                          <IssueStatusSelect
+                            issue={issue}
+                            session={session()}
+                            org={org()}
+                            orgSlug={params().orgSlug}
+                            onDone={refresh}
+                            onError={setError}
+                          />
                         </Table.Cell>
                         <Table.Cell data-label="Priority">
                           <PriorityBadge priority={issue.priority} />
                         </Table.Cell>
                         <Table.Cell data-label="Assignee">
-                          {issue.assignee?.fullName ?? issue.assignee?.email ?? "—"}
+                          <IssueAssigneeSelect
+                            issue={issue}
+                            members={members.data ?? []}
+                            session={session()}
+                            org={org()}
+                            orgSlug={params().orgSlug}
+                            onDone={refresh}
+                            onError={setError}
+                          />
+                        </Table.Cell>
+                        <Table.Cell data-actions textAlign="right">
+                          <IssueRowActions
+                            issue={issue}
+                            session={session()}
+                            org={org()}
+                            orgSlug={params().orgSlug}
+                            onDone={refresh}
+                            onError={setError}
+                          />
                         </Table.Cell>
                       </Table.Row>
                     )}
