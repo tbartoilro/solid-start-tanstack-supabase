@@ -136,6 +136,61 @@ could never see a whole row, and with many rows you scrolled in two axes.
       hit-testable, swallowed their clicks. Measured 262x150 before, 14x14 after.
       Affected every Select in the app, not just the project filter.
 
+## Done — issue permissions were unreachable from the UI
+
+- [x] Nobody could create, edit, delete, reassign or restatus an issue on any
+      screen, so `issues.write` and `issues.assign` existed only in the
+      database. Both issue tables now share `src/components/IssueControls.tsx`,
+      so the rule for who sees what is written once rather than twice.
+- [x] The status picker is offered to an issue's assignee whatever role they
+      hold — being handed a task carries the right to report on it. Enforced by
+      `public.set_issue_status`, not by the gate that hides the control.
+- [x] `e2e/issue-permissions.spec.ts` drives the viewer through the real control
+      for the row-dependent rule and asserts every refusal at the endpoint, on
+      the message as well as the failure.
+
+## Done — pagination was inert
+
+- [x] Projects and members fetched every row and rendered all of them, so
+      Previous/Next had nothing to page through and sat permanently disabled.
+      Both now page server-side with `{ count: "exact" }`, with the page number
+      in the URL so a list is linkable.
+- [x] `pageSize` is clamped at the RPC boundary. These are public endpoints; a
+      limit the UI happens to respect is not a limit.
+- [x] Assignee pickers use `listAllMembers`, not page one of the roster — a
+      paged picker silently makes everyone past 25 unassignable.
+
+## Done — the plugin
+
+- [x] Six skills under `skills/`, so another Claude instance can work on this
+      template without rediscovering it. Every cited path, symbol, migration and
+      npm script was checked to exist.
+- [x] Review pass fixed a contradiction between skills (card breakpoint is
+      `lg`, not `md`) and a rule that would have broken working code (a Select
+      inside a Dialog must NOT be portalled, or it lands outside the focus trap).
+
+## Fixed — organizations could never be deleted
+
+- [x] `protect_last_owner` and both audit triggers fire on rows that vanish as a
+      cascade from the parent, and all three treated a teardown as an ordinary
+      edit. `delete from organizations` always failed, so the
+      "orgs: owner can delete" policy advertised something the schema refused.
+      Found while making the demo loader idempotent. Regression test verified to
+      fail against the old triggers.
+
+## Done — data at volume
+
+- [x] `npm run db:demo` loads Northwind Trading: 68 people, 44 projects, 714
+      issues. A separate tenant, because the seed is also a test fixture that
+      several suites assert exact counts against.
+
+## Fixed — a test asserting the wrong thing
+
+- [x] `org-switching.spec.ts` anchored a URL check with `$`, which quietly made
+      it an assertion that no query string was present. Paging members put
+      `?page=1` on the sidebar link and it failed. The path is still matched
+      exactly, up to the query string.
+
 ## Notes for later
 
 - The Ark v5 bridge in `panda.config.ts` is temporary. Delete it when
@@ -145,3 +200,8 @@ could never see a whole row, and with many rows you scrolled in two axes.
   component.
 - Playwright's bundled Chromium cannot run on NixOS; the suite honours
   `CHROMIUM_PATH` (`/run/current-system/sw/bin/chromium` here).
+- Page 1 is spelled `?page=1` in the URL rather than left implicit. Harmless,
+  but it means URL assertions must not anchor on `$`.
+- `npm run db:demo` needs Docker: the Supabase CLI's `db query` runs a prepared
+  statement and so takes one command only, which a multi-statement load is not.
+  It goes through `psql` inside the database container instead.
