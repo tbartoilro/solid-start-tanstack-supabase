@@ -8,6 +8,7 @@ dist/
 .env
 .env.*
 !.env.example
+!.env.test
 
 # supabase local stack
 supabase/.branches/

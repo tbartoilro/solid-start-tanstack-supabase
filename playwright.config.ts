@@ -58,12 +58,18 @@ export default defineConfig({
   // --host 127.0.0.1 is not optional: vite otherwise binds IPv6 loopback only
   // ([::1]:3010), and the readiness probe below never connects.
   webServer: {
-    // PUBLIC_APP_URL is overridden so links generated during the run — invite
-    // and password-recovery — point at this server rather than the dev port in
-    // .env. Without it the recovery link redirects to 4321 and the test follows
-    // it to a server that is not running.
-    command:
-      "PUBLIC_APP_URL=http://127.0.0.1:3010 npx vite dev --port 3010 --host 127.0.0.1",
+    // `--mode test` loads .env.test, which sets PUBLIC_APP_URL to this server.
+    // Links minted during the run — invitations and password recovery — are
+    // absolute, so they have to point here rather than at the dev port.
+    //
+    // This was previously an inline `PUBLIC_APP_URL=... npx vite dev`, which
+    // passes in CI and silently fails on a developer machine: CI has no .env so
+    // the shell variable is the only source, but locally Vite loads .env into
+    // the SSR worker and the shell value is lost. The recovery link then points
+    // at :4321 while the browser is on :3010, the PKCE verifier cookie is on
+    // the wrong origin, and the exchange fails. `.env.[mode]` beats `.env`, so
+    // this works the same way with or without a local .env.
+    command: "npx vite dev --mode test --port 3010 --host 127.0.0.1",
     url: "http://127.0.0.1:3010/login",
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,
