@@ -65,6 +65,30 @@ export async function authenticated<S extends z.ZodType>(
   return { input: parsed.data, ctx: requireAuth() };
 }
 
+/**
+ * Validate and scope to a tenant, without asserting a permission.
+ *
+ * For the handful of operations whose rule is not "holds permission X" and so
+ * cannot be expressed as a single `authorize` call — currently only changing an
+ * issue's status, which the assignee may do without `issues.write`. The finer
+ * rule then lives in the database function that can actually see the row.
+ *
+ * Membership is still required, so this is a narrowing of `authorize`, not an
+ * escape from it. Reach for `authorize` unless the rule genuinely depends on
+ * the row.
+ */
+export async function withinOrg<S extends z.ZodType<{ orgSlug: string }>>(
+  schema: S,
+  raw: unknown,
+): Promise<{ input: z.output<S>; ctx: OrgContext }> {
+  const parsed = schema.safeParse(raw);
+  if (!parsed.success) {
+    throw invalidInput("Check the submitted values.", z.flattenError(parsed.error));
+  }
+
+  return { input: parsed.data, ctx: requireOrg(parsed.data.orgSlug) };
+}
+
 /** Shared shape: every tenant-scoped call names the tenant it acts on. */
 export const orgScoped = z.object({
   orgSlug: z.string().min(1),

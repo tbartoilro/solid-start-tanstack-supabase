@@ -1,7 +1,8 @@
 "use server";
 
 import { z } from "zod";
-import { authorize, orgScoped } from "../guard";
+import { authorize, orgScoped, withinOrg } from "../guard";
+import { forbidden, notFound } from "../errors";
 import * as issues from "../services/issues";
 
 const statusEnum = z.enum(["backlog", "todo", "in_progress", "in_review", "done", "cancelled"]);
@@ -76,5 +77,43 @@ const deleteSchema = orgScoped.extend({ issueId: z.guid() });
 export async function deleteIssue(input: unknown) {
   const { input: data, ctx } = await authorize("issues.write", deleteSchema, input);
   await issues.deleteIssue(ctx, data.issueId);
+  return { ok: true as const };
+}
+
+const setStatusSchema = orgScoped.extend({
+  issueId: z.guid(),
+  status: statusEnum,
+});
+
+/**
+ * Status-only update, reachable by the assignee.
+ *
+ * Deliberately not behind `authorize("issues.write", ...)`. Being handed a task
+ * has to carry the right to report on it, whatever role you otherwise hold — a
+ * viewer assigned an issue can close it, and could not before.
+ *
+ * `withinOrg` establishes membership and nothing more; the actual rule needs to
+ * see the row's assignee, so it lives in `public.set_issue_status`. That is also
+ * why this is a database function rather than a widened RLS policy: "may change
+ * the status" is not "may change the row", and an UPDATE policy cannot express
+ * the difference.
+ */
+export async function setIssueStatus(input: unknown) {
+  const { input: data, ctx } = await withinOrg(setStatusSchema, input);
+
+  const { error } = await ctx.db.rpc("set_issue_status", {
+    target_issue: data.issueId,
+    next_status: data.status,
+  });
+
+  if (error) {
+    // The function raises no_data_found for a non-member or unknown issue, and
+    // insufficient_privilege when the caller is neither writer nor assignee.
+    if (error.code === "P0002" || /not found/i.test(error.message)) {
+      throw notFound("That issue does not exist.");
+    }
+    throw forbidden("You cannot change that issue's status.");
+  }
+
   return { ok: true as const };
 }

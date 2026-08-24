@@ -398,6 +398,13 @@ export type Database = {
         }
         Returns: boolean
       }
+      set_issue_status: {
+        Args: {
+          next_status: Database["public"]["Enums"]["issue_status"]
+          target_issue: string
+        }
+        Returns: undefined
+      }
     }
     Enums: {
       app_permission:
