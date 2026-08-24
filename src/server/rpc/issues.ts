@@ -9,9 +9,11 @@ const statusEnum = z.enum(["backlog", "todo", "in_progress", "in_review", "done"
 const priorityEnum = z.enum(["none", "low", "medium", "high", "urgent"]);
 
 /**
- * Pagination is clamped server-side. A client asking for `pageSize=100000`
- * gets 100 — the endpoint is public, so limits cannot be enforced by the UI
- * that happens to call it.
+ * Pagination is clamped server-side, because the endpoint is public and a
+ * limit the UI happens to respect is not a limit. `.catch` rather than a hard
+ * rejection: anything out of range (`pageSize=100000`, `page=0`, `page=abc`)
+ * falls back to the default instead of erroring, so a mangled URL still
+ * renders a page.
  */
 const listSchema = orgScoped.extend({
   projectId: z.guid().optional(),

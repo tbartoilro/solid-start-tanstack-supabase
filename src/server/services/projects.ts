@@ -30,6 +30,18 @@ export interface ProjectDetail extends ProjectSummary {
   createdAt: string;
 }
 
+export interface ProjectListResult {
+  projects: ProjectSummary[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface ListProjectsInput {
+  page: number;
+  pageSize: number;
+}
+
 export interface CreateProjectInput {
   name: string;
   key: string;
@@ -45,24 +57,39 @@ export interface UpdateProjectInput {
 
 const OPEN_STATUSES = ["backlog", "todo", "in_progress", "in_review"] as const;
 
-export async function listProjects(ctx: OrgContext): Promise<ProjectSummary[]> {
-  const { data, error } = await ctx.db
+export async function listProjects(
+  ctx: OrgContext,
+  input: ListProjectsInput,
+): Promise<ProjectListResult> {
+  const from = (input.page - 1) * input.pageSize;
+  const to = from + input.pageSize - 1;
+
+  // `count` counts the top-level rows, so the embedded `issues(count)` and the
+  // filter on it narrow each project's open-issue tally without touching the
+  // number of projects reported.
+  const { data, error, count } = await ctx.db
     .from("projects")
-    .select("id, name, key, description, archived_at, issues(count)")
+    .select("id, name, key, description, archived_at, issues(count)", { count: "exact" })
     .eq("org_id", ctx.orgId)
     .in("issues.status", OPEN_STATUSES)
-    .order("name");
+    .order("name")
+    .range(from, to);
 
   if (error) throw new Error(`listProjects: ${error.message}`);
 
-  return (data ?? []).map((row) => ({
-    id: row.id,
-    name: row.name,
-    key: row.key,
-    description: row.description,
-    archivedAt: row.archived_at,
-    openIssues: (row.issues as unknown as Array<{ count: number }>)?.[0]?.count ?? 0,
-  }));
+  return {
+    projects: (data ?? []).map((row) => ({
+      id: row.id,
+      name: row.name,
+      key: row.key,
+      description: row.description,
+      archivedAt: row.archived_at,
+      openIssues: (row.issues as unknown as Array<{ count: number }>)?.[0]?.count ?? 0,
+    })),
+    total: count ?? 0,
+    page: input.page,
+    pageSize: input.pageSize,
+  };
 }
 
 export async function getProject(ctx: OrgContext, projectId: string): Promise<ProjectDetail> {

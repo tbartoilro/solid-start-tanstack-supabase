@@ -1,10 +1,11 @@
 import { useQuery, useQueryClient } from "@tanstack/solid-query";
-import { createFileRoute, Link } from "@tanstack/solid-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/solid-router";
 import { createSignal, For, Show } from "solid-js";
 import { Stack } from "styled-system/jsx";
+import { z } from "zod";
 import { Can } from "~/components/Can";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
-import { CreateBar, ResponsiveTable } from "~/components/data";
+import { CreateBar, Pagination, ResponsiveTable } from "~/components/data";
 import { EmptyState, ErrorBanner, PageHeader } from "~/components/page";
 import { IssueKey } from "~/components/StatusBadge";
 import { Button } from "~/components/ui/button";
@@ -16,9 +17,22 @@ import { Text } from "~/components/ui/text";
 import { projectsQuery } from "~/lib/queries";
 import { createProject, deleteProject } from "~/server/rpc/projects";
 
+/*
+ * The page lives in the URL, so a position in the list is linkable and survives
+ * a reload. `.catch(1)` means a hand-edited `?page=banana` degrades to the first
+ * page instead of throwing.
+ */
+const searchSchema = z.object({
+  page: z.coerce.number().int().min(1).catch(1),
+});
+
 export const Route = createFileRoute("/_authed/$orgSlug/projects/")({
-  loader: ({ context, params }) =>
-    context.queryClient.ensureQueryData(projectsQuery(params.orgSlug)),
+  validateSearch: searchSchema,
+  // Declaring the page as a loader dep is what makes the loader re-run when it
+  // changes — and only then.
+  loaderDeps: ({ search }) => ({ page: search.page }),
+  loader: ({ context, params, deps }) =>
+    context.queryClient.ensureQueryData(projectsQuery(params.orgSlug, deps.page)),
   component: ProjectsPage,
 });
 
@@ -33,9 +47,14 @@ function ProjectsPage() {
   const context = Route.useRouteContext();
   const session = () => context().session;
   const org = () => context().org;
+  const search = Route.useSearch();
+  const navigate = useNavigate({ from: Route.fullPath });
   const queryClient = useQueryClient();
 
-  const projects = useQuery(() => projectsQuery(params().orgSlug));
+  const projects = useQuery(() => projectsQuery(params().orgSlug, search().page));
+
+  const totalPages = () =>
+    Math.max(1, Math.ceil((projects.data?.total ?? 0) / (projects.data?.pageSize ?? 25)));
 
   const [name, setName] = createSignal("");
   const [key, setKey] = createSignal("");
@@ -139,7 +158,7 @@ function ProjectsPage() {
       <Card.Root>
         <Card.Body p="0">
           <Show
-            when={(projects.data?.length ?? 0) > 0}
+            when={(projects.data?.projects.length ?? 0) > 0}
             fallback={
               <EmptyState
                 title="No projects yet"
@@ -159,7 +178,7 @@ function ProjectsPage() {
                   </Table.Row>
                 </Table.Head>
                 <Table.Body>
-                  <For each={projects.data}>
+                  <For each={projects.data?.projects}>
                     {(p) => (
                       <Table.Row>
                         <Table.Cell data-label="Key">
@@ -231,6 +250,14 @@ function ProjectsPage() {
               </Table.Root>
             </ResponsiveTable>
           </Show>
+
+          <Pagination
+            page={search().page}
+            totalPages={totalPages()}
+            summary={`Page ${search().page} of ${totalPages()} · ${projects.data?.total ?? 0} projects`}
+            onPrevious={() => navigate({ search: (p) => ({ ...p, page: p.page - 1 }) })}
+            onNext={() => navigate({ search: (p) => ({ ...p, page: p.page + 1 }) })}
+          />
         </Card.Body>
       </Card.Root>
     </>

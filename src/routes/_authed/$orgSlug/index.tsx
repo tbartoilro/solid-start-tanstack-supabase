@@ -14,7 +14,7 @@ export const Route = createFileRoute("/_authed/$orgSlug/")({
   // rendered rather than as a page full of spinners.
   loader: async ({ context, params }) => {
     await Promise.all([
-      context.queryClient.ensureQueryData(projectsQuery(params.orgSlug)),
+      context.queryClient.ensureQueryData(projectsQuery(params.orgSlug, 1)),
       context.queryClient.ensureQueryData(issuesQuery(params.orgSlug, { page: 1 })),
     ]);
   },
@@ -32,10 +32,10 @@ function Overview() {
   const context = Route.useRouteContext();
   const org = () => context().org;
 
-  const projects = useQuery(() => projectsQuery(params().orgSlug));
+  const projects = useQuery(() => projectsQuery(params().orgSlug, 1));
   const issues = useQuery(() => issuesQuery(params().orgSlug, { page: 1 }));
 
-  const openCount = () => (projects.data ?? []).reduce((sum, p) => sum + p.openIssues, 0);
+  const openCount = () => (projects.data?.projects ?? []).reduce((sum, p) => sum + p.openIssues, 0);
 
   return (
     <>
@@ -50,7 +50,7 @@ function Overview() {
 
       {/* Three across even on a phone — see StatTile for why they are compact. */}
       <Grid columns={3} gap={{ base: "2", md: "4" }} mb="6">
-        <StatTile label="Projects" value={projects.data?.length ?? 0} />
+        <StatTile label="Projects" value={projects.data?.total ?? 0} />
         <StatTile label="Open issues" value={openCount()} />
         <StatTile label="Total issues" value={issues.data?.total ?? 0} />
       </Grid>
@@ -62,7 +62,7 @@ function Overview() {
           </Card.Header>
           <Card.Body>
             <Show
-              when={(projects.data?.length ?? 0) > 0}
+              when={(projects.data?.projects.length ?? 0) > 0}
               fallback={
                 <EmptyState
                   title="No projects yet"
@@ -71,7 +71,7 @@ function Overview() {
               }
             >
               <Stack gap="0" divideY="1px" divideColor="border.default">
-                <For each={projects.data}>
+                <For each={projects.data?.projects}>
                   {(p) => (
                     <HStack justifyContent="space-between" gap="4" py="3">
                       <HStack gap="3" minW="0">

@@ -1,13 +1,14 @@
 import { createListCollection } from "@ark-ui/solid/select";
 import { useQuery, useQueryClient } from "@tanstack/solid-query";
-import { createFileRoute } from "@tanstack/solid-router";
+import { createFileRoute, useNavigate } from "@tanstack/solid-router";
 import { ChevronsUpDown } from "lucide-solid";
 import { createSignal, For, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { Box, HStack, Stack } from "styled-system/jsx";
+import { z } from "zod";
 import { Can } from "~/components/Can";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
-import { CreateBar, ResponsiveTable } from "~/components/data";
+import { CreateBar, Pagination, ResponsiveTable } from "~/components/data";
 import { EmptyState, ErrorBanner, PageHeader } from "~/components/page";
 import * as Alert from "~/components/ui/alert";
 import { Badge } from "~/components/ui/badge";
@@ -35,9 +36,16 @@ const roleCollection = createListCollection({
 });
 
 export const Route = createFileRoute("/_authed/$orgSlug/members")({
-  loader: async ({ context, params }) => {
+  // `.catch()` so a hand-edited `?page=banana` degrades to page 1 rather than
+  // throwing at the route boundary.
+  validateSearch: z.object({ page: z.coerce.number().int().min(1).catch(1) }),
+  // Declaring the page as a loader dep is what makes the loader re-run when it
+  // changes — and only then. The invitations list is not paged, so it is
+  // fetched once and simply re-read from cache on a page change.
+  loaderDeps: ({ search }) => search,
+  loader: async ({ context, params, deps }) => {
     await Promise.all([
-      context.queryClient.ensureQueryData(membersQuery(params.orgSlug)),
+      context.queryClient.ensureQueryData(membersQuery(params.orgSlug, deps.page)),
       context.queryClient.ensureQueryData(invitationsQuery(params.orgSlug)),
     ]);
   },
@@ -120,9 +128,14 @@ function MembersPage() {
   const session = () => context().session;
   const org = () => context().org;
   const queryClient = useQueryClient();
+  const search = Route.useSearch();
+  const navigate = useNavigate({ from: Route.fullPath });
 
-  const members = useQuery(() => membersQuery(params().orgSlug));
+  const members = useQuery(() => membersQuery(params().orgSlug, search().page));
   const invitations = useQuery(() => invitationsQuery(params().orgSlug));
+
+  const totalPages = () =>
+    Math.max(1, Math.ceil((members.data?.total ?? 0) / (members.data?.pageSize ?? 25)));
 
   const [email, setEmail] = createSignal("");
   const [inviteRole, setInviteRole] = createSignal<AppRole>("member");
@@ -294,7 +307,7 @@ function MembersPage() {
                 </Table.Row>
               </Table.Head>
               <Table.Body>
-                <For each={members.data}>
+                <For each={members.data?.members}>
                   {(m) => (
                     <Table.Row>
                       {/*
@@ -401,6 +414,14 @@ function MembersPage() {
               </Table.Body>
             </Table.Root>
           </ResponsiveTable>
+
+          <Pagination
+            page={search().page}
+            totalPages={totalPages()}
+            summary={`Page ${search().page} of ${totalPages()} · ${members.data?.total ?? 0} members`}
+            onPrevious={() => navigate({ search: (p) => ({ ...p, page: p.page - 1 }) })}
+            onNext={() => navigate({ search: (p) => ({ ...p, page: p.page + 1 }) })}
+          />
         </Card.Body>
       </Card.Root>
 

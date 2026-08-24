@@ -1,7 +1,7 @@
 import { queryOptions } from "@tanstack/solid-query";
 import { getSession } from "~/server/rpc/auth";
 import { listIssues } from "~/server/rpc/issues";
-import { listInvitations, listMembers } from "~/server/rpc/members";
+import { listAllMembers, listInvitations, listMembers } from "~/server/rpc/members";
 import { listAuditLog } from "~/server/rpc/org";
 import { getProject, listProjects } from "~/server/rpc/projects";
 
@@ -26,10 +26,10 @@ export const sessionQuery = () =>
     staleTime: 5 * 60_000,
   });
 
-export const projectsQuery = (orgSlug: string) =>
+export const projectsQuery = (orgSlug: string, page: number) =>
   queryOptions({
-    queryKey: ["projects", orgSlug] as const,
-    queryFn: () => listProjects({ orgSlug }),
+    queryKey: ["projects", orgSlug, page] as const,
+    queryFn: () => listProjects({ orgSlug, page }),
   });
 
 export const projectQuery = (orgSlug: string, projectId: string) =>
@@ -54,10 +54,26 @@ export const issuesQuery = (orgSlug: string, filters: IssueFilters) =>
     queryFn: () => listIssues({ orgSlug, ...filters }),
   });
 
-export const membersQuery = (orgSlug: string) =>
+export const membersQuery = (orgSlug: string, page: number) =>
   queryOptions({
-    queryKey: ["members", orgSlug] as const,
-    queryFn: () => listMembers({ orgSlug }),
+    queryKey: ["members", orgSlug, page] as const,
+    queryFn: () => listMembers({ orgSlug, page }),
+  });
+
+/**
+ * Every member in one go, for the assignee pickers.
+ *
+ * Deliberately not `membersQuery(slug, 1)`: a picker showing only the first
+ * page would quietly drop everyone after it, and "why can I not assign this to
+ * Sam" is a bug nobody reports as pagination.
+ *
+ * Keyed under the same `members` prefix as the paged query, so the existing
+ * prefix invalidation on the members screen refreshes both.
+ */
+export const allMembersQuery = (orgSlug: string) =>
+  queryOptions({
+    queryKey: ["members", orgSlug, "all"] as const,
+    queryFn: () => listAllMembers({ orgSlug }),
   });
 
 export const invitationsQuery = (orgSlug: string) =>

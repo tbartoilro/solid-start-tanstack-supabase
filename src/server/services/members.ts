@@ -35,6 +35,18 @@ export interface InvitationRow {
   createdAt: string;
 }
 
+export interface MemberListResult {
+  members: MemberRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface ListMembersInput {
+  page: number;
+  pageSize: number;
+}
+
 /** Higher outranks lower. Used only for the escalation guard. */
 const RANK: Record<AppRole, number> = { viewer: 0, member: 1, admin: 2, owner: 3 };
 
@@ -49,31 +61,75 @@ export function assertCanAssignRole(actorRole: AppRole, targetRole: AppRole): vo
   }
 }
 
-export async function listMembers(ctx: OrgContext): Promise<MemberRow[]> {
-  const { data, error } = await ctx.db
+const MEMBER_SELECT =
+  "id, user_id, role, created_at, profiles!inner(id, email, full_name, avatar_url)";
+
+function toMemberRow(row: {
+  id: string;
+  user_id: string;
+  role: AppRole;
+  created_at: string;
+  profiles: unknown;
+}): MemberRow {
+  const profile = row.profiles as {
+    email: string;
+    full_name: string | null;
+    avatar_url: string | null;
+  };
+
+  return {
+    membershipId: row.id,
+    userId: row.user_id,
+    email: profile.email,
+    fullName: profile.full_name,
+    avatarUrl: profile.avatar_url,
+    role: row.role,
+    joinedAt: row.created_at,
+  };
+}
+
+export async function listMembers(
+  ctx: OrgContext,
+  input: ListMembersInput,
+): Promise<MemberListResult> {
+  const from = (input.page - 1) * input.pageSize;
+  const to = from + input.pageSize - 1;
+
+  const { data, error, count } = await ctx.db
     .from("memberships")
-    .select("id, user_id, role, created_at, profiles!inner(id, email, full_name, avatar_url)")
+    .select(MEMBER_SELECT, { count: "exact" })
     .eq("org_id", ctx.orgId)
-    .order("created_at");
+    .order("created_at")
+    .range(from, to);
 
   if (error) throw new Error(`listMembers: ${error.message}`);
 
-  return (data ?? []).map((row) => {
-    const profile = row.profiles as unknown as {
-      email: string;
-      full_name: string | null;
-      avatar_url: string | null;
-    };
-    return {
-      membershipId: row.id,
-      userId: row.user_id,
-      email: profile.email,
-      fullName: profile.full_name,
-      avatarUrl: profile.avatar_url,
-      role: row.role,
-      joinedAt: row.created_at,
-    };
-  });
+  return {
+    members: (data ?? []).map(toMemberRow),
+    total: count ?? 0,
+    page: input.page,
+    pageSize: input.pageSize,
+  };
+}
+
+/**
+ * The same roster, unpaginated.
+ *
+ * This exists for the assignee pickers, which have to offer every member of the
+ * organization — handing them a page would silently make anyone past the first
+ * pageSize unassignable, which looks like missing data rather than a limit.
+ * Bounded by how many people are in the org, so there is nothing to page.
+ */
+export async function listAllMembers(ctx: OrgContext): Promise<MemberRow[]> {
+  const { data, error } = await ctx.db
+    .from("memberships")
+    .select(MEMBER_SELECT)
+    .eq("org_id", ctx.orgId)
+    .order("created_at");
+
+  if (error) throw new Error(`listAllMembers: ${error.message}`);
+
+  return (data ?? []).map(toMemberRow);
 }
 
 export async function changeMemberRole(

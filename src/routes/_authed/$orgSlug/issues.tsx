@@ -58,7 +58,7 @@ export const Route = createFileRoute("/_authed/$orgSlug/issues")({
     };
     await Promise.all([
       context.queryClient.ensureQueryData(issuesQuery(params.orgSlug, filters)),
-      context.queryClient.ensureQueryData(projectsQuery(params.orgSlug)),
+      context.queryClient.ensureQueryData(projectsQuery(params.orgSlug, 1)),
     ]);
   },
   component: IssuesPage,
@@ -82,13 +82,13 @@ function IssuesPage() {
   });
 
   const issues = useQuery(() => issuesQuery(params().orgSlug, filters()));
-  const projects = useQuery(() => projectsQuery(params().orgSlug));
+  const projects = useQuery(() => projectsQuery(params().orgSlug, 1));
 
   const projectCollection = createMemo(() =>
     createListCollection({
       items: [
         { label: "All projects", value: "" },
-        ...(projects.data ?? []).map((p) => ({ label: p.name, value: p.id })),
+        ...(projects.data?.projects ?? []).map((p) => ({ label: p.name, value: p.id })),
       ],
     }),
   );

@@ -12,9 +12,21 @@ import * as projects from "../services/projects";
  * logic lives here, and no authorization logic lives in the service.
  */
 
+/**
+ * Pagination is clamped server-side, because the endpoint is public and a
+ * limit the UI happens to respect is not a limit. `.catch` rather than a hard
+ * rejection: anything out of range (`pageSize=100000`, `page=0`, `page=abc`)
+ * falls back to the default instead of erroring, so a mangled URL still
+ * renders a page.
+ */
+const listSchema = orgScoped.extend({
+  page: z.coerce.number().int().min(1).catch(1),
+  pageSize: z.coerce.number().int().min(1).max(100).catch(25),
+});
+
 export async function listProjects(input: unknown) {
-  const { ctx } = await authorize("projects.read", orgScoped, input);
-  return projects.listProjects(ctx);
+  const { input: data, ctx } = await authorize("projects.read", listSchema, input);
+  return projects.listProjects(ctx, data);
 }
 
 const getSchema = orgScoped.extend({ projectId: z.guid() });

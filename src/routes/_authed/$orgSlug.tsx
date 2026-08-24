@@ -208,7 +208,7 @@ function OrgLayout() {
             Overview
           </Link>
           <Show when={can(session(), org().id, "projects.read")}>
-            <Link to="/$orgSlug/projects" params={{ orgSlug: org().slug }} class={navLink}>
+            <Link to="/$orgSlug/projects" params={{ orgSlug: org().slug }} search={{ page: 1 }} class={navLink}>
               Projects
             </Link>
           </Show>
@@ -223,7 +223,7 @@ function OrgLayout() {
             </Link>
           </Show>
           <Show when={can(session(), org().id, "members.read")}>
-            <Link to="/$orgSlug/members" params={{ orgSlug: org().slug }} class={navLink}>
+            <Link to="/$orgSlug/members" params={{ orgSlug: org().slug }} search={{ page: 1 }} class={navLink}>
               Members
             </Link>
           </Show>

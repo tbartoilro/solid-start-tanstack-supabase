@@ -7,9 +7,34 @@ import * as members from "../services/members";
 
 const roleEnum = z.enum(["owner", "admin", "member", "viewer"]);
 
+/**
+ * Pagination is clamped server-side, because the endpoint is public and a
+ * limit the UI happens to respect is not a limit. `.catch` rather than a hard
+ * rejection: anything out of range (`pageSize=100000`, `page=0`, `page=abc`)
+ * falls back to the default instead of erroring, so a mangled URL still
+ * renders a page.
+ */
+const listSchema = orgScoped.extend({
+  page: z.coerce.number().int().min(1).catch(1),
+  pageSize: z.coerce.number().int().min(1).max(100).catch(25),
+});
+
 export async function listMembers(input: unknown) {
+  const { input: data, ctx } = await authorize("members.read", listSchema, input);
+  return members.listMembers(ctx, data);
+}
+
+/**
+ * The unpaginated roster, for pickers that must offer every member.
+ *
+ * Separate endpoint rather than a `pageSize=all` escape hatch on the one above,
+ * so the paged endpoint keeps a ceiling that cannot be argued away by input.
+ * Same `members.read` permission: this exposes nothing the paged call does not,
+ * only in one response.
+ */
+export async function listAllMembers(input: unknown) {
   const { ctx } = await authorize("members.read", orgScoped, input);
-  return members.listMembers(ctx);
+  return members.listAllMembers(ctx);
 }
 
 export async function listInvitations(input: unknown) {
