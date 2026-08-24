@@ -68,14 +68,19 @@ export function SortableHeader(props: {
             type="button"
             variant="ghost"
             size="xs"
-            px="1"
+            // No horizontal padding: the cell already supplies it, and a button
+            // that adds its own makes every sortable column wider than its
+            // plain neighbours. Four sortable headers' worth of that pushed the
+            // issues table 8px past its container at 1100px — the width where
+            // the sidebar leaves it least room.
+            px="0"
             // Inherited so a sortable header is typographically identical to a
             // plain one — the control should not announce itself by looking
             // different from its neighbours.
             fontWeight="inherit"
             fontSize="inherit"
             color="inherit"
-            gap="1"
+            gap="0.5"
             onClick={() => props.onSort({ column: props.column.id, dir: next() })}
           >
             {props.column.label}

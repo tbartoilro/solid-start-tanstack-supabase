@@ -18,6 +18,7 @@ import { projectsQuery } from "~/lib/queries";
 import { projectsResource, PROJECT_SORTS, type ProjectSort } from "~/resources/projects";
 import { SortableHeader } from "~/components/SortableHeader";
 import { createProject, deleteProject } from "~/server/rpc/projects";
+import { ISSUE_DEFAULT_SEARCH } from "~/resources/issues";
 
 /*
  * The page lives in the URL, so a position in the list is linkable and survives
@@ -216,6 +217,7 @@ function ProjectsPage() {
                           <Stack gap="0" maxW="22rem">
                             <Link
                               to="/$orgSlug/projects/$projectId"
+                              search={ISSUE_DEFAULT_SEARCH}
                               params={{ orgSlug: params().orgSlug, projectId: p.id }}
                             >
                               {p.name}

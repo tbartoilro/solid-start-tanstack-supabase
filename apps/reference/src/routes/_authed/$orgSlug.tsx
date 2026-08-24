@@ -15,6 +15,7 @@ import { Text } from "~/components/ui/text";
 import { can, type SessionOrg } from "~/lib/auth";
 import { setActiveOrg } from "~/server/rpc/auth";
 import { AUDIT_DEFAULT_SEARCH } from "~/resources/audit";
+import { ISSUE_DEFAULT_SEARCH } from "~/resources/issues";
 import { MEMBER_DEFAULT_SEARCH } from "~/resources/members";
 import { PROJECT_DEFAULT_SEARCH } from "~/resources/projects";
 
@@ -221,7 +222,7 @@ function OrgLayout() {
               issues route declares `page` in its search schema, so a link that
               omitted it would not compile. Broken links become type errors.
             */}
-            <Link to="/$orgSlug/issues" params={{ orgSlug: org().slug }} search={{ page: 1 }} class={navLink}>
+            <Link to="/$orgSlug/issues" params={{ orgSlug: org().slug }} search={ISSUE_DEFAULT_SEARCH} class={navLink}>
               Issues
             </Link>
           </Show>

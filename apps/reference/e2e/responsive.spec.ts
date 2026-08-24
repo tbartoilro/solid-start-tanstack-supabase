@@ -214,7 +214,11 @@ test.describe("tables become cards on a phone", () => {
       } else {
         await page.goto("/acme/projects");
         await page.getByRole("table").getByRole("link").first().click();
-        await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}$/);
+        // Tolerates the search params the link carries — the project detail
+        // route declares page/sort/dir, so its links are not bare paths.
+        // Anchoring on `$` asserted the absence of a query string, which was
+        // never the point: what matters is that the click landed on a project.
+        await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}(\?|$)/);
       }
       const where = path ?? "project detail";
       await expect(page.getByRole("table")).toBeVisible();

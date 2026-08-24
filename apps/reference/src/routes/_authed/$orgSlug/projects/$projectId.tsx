@@ -1,8 +1,12 @@
 import { useQuery, useQueryClient } from "@tanstack/solid-query";
-import { createFileRoute } from "@tanstack/solid-router";
+import { createFileRoute, useNavigate } from "@tanstack/solid-router";
 import { createSignal, For, Show } from "solid-js";
 import { Can } from "~/components/Can";
-import { CreateBar, ResponsiveTable } from "~/components/data";
+import { z } from "zod";
+import { totalPages as pages } from "@orgadmin/core";
+import { CreateBar, Pagination, ResponsiveTable } from "~/components/data";
+import { SortableHeader } from "~/components/SortableHeader";
+import { issuesResource, ISSUE_SORTS, type IssueSort } from "~/resources/issues";
 import {
   IssueAssigneeSelect,
   IssueRowActions,
@@ -18,12 +22,26 @@ import * as Table from "~/components/ui/table";
 import { allMembersQuery, issuesQuery, projectQuery } from "~/lib/queries";
 import { createIssue } from "~/server/rpc/issues";
 
+/**
+ * This screen had no search params at all and asked for `page: 1` outright, so
+ * a project with more than a pageful of issues silently showed only the first
+ * 25 with no control to reach the rest. Paging it is the fix; sorting comes
+ * along for free from the same descriptor the cross-project list uses.
+ */
+const searchSchema = z.object({
+  page: z.coerce.number().int().min(1).catch(1),
+  sort: z.enum(ISSUE_SORTS).catch(issuesResource.defaultSort.column as IssueSort),
+  dir: z.enum(["asc", "desc"]).catch(issuesResource.defaultSort.dir),
+});
+
 export const Route = createFileRoute("/_authed/$orgSlug/projects/$projectId")({
-  loader: async ({ context, params }) => {
+  validateSearch: searchSchema,
+  loaderDeps: ({ search }) => search,
+  loader: async ({ context, params, deps }) => {
     await Promise.all([
       context.queryClient.ensureQueryData(projectQuery(params.orgSlug, params.projectId)),
       context.queryClient.ensureQueryData(
-        issuesQuery(params.orgSlug, { projectId: params.projectId, page: 1 }),
+        issuesQuery(params.orgSlug, { projectId: params.projectId, ...deps }),
       ),
       // Prefetched with the rest so the assignee pickers are populated on first
       // paint rather than filling in a beat after the table renders. Every role
@@ -42,6 +60,8 @@ function ProjectDetail() {
    * reading it once at setup would leave the gate below judging the tenant the
    * user switched away from.
    */
+  const search = Route.useSearch();
+  const navigate = useNavigate({ from: Route.fullPath });
   const context = Route.useRouteContext();
   const session = () => context().session;
   const org = () => context().org;
@@ -49,13 +69,15 @@ function ProjectDetail() {
 
   const project = useQuery(() => projectQuery(params().orgSlug, params().projectId));
   const issues = useQuery(() =>
-    issuesQuery(params().orgSlug, { projectId: params().projectId, page: 1 }),
+    issuesQuery(params().orgSlug, { projectId: params().projectId, ...search() }),
   );
   /*
    * Every member, not `membersQuery`: that one is paged, and a picker showing
    * only the first page would silently make everyone after it unassignable.
    */
   const members = useQuery(() => allMembersQuery(params().orgSlug));
+
+  const totalPages = () => pages(issues.data?.total ?? 0, issues.data?.pageSize ?? 25);
 
   const [title, setTitle] = createSignal("");
   const [error, setError] = createSignal<string | null>(null);
@@ -158,12 +180,20 @@ function ProjectDetail() {
               <Table.Root size="sm">
                 <Table.Head>
                   <Table.Row>
-                    <Table.Header>Issue</Table.Header>
-                    <Table.Header>Title</Table.Header>
-                    <Table.Header>Status</Table.Header>
-                    <Table.Header>Priority</Table.Header>
-                    <Table.Header>Assignee</Table.Header>
-                    <Table.Header />
+                    <For each={issuesResource.columns}>
+                      {(column) => (
+                        <SortableHeader
+                          column={column}
+                          sort={() => search().sort}
+                          dir={() => search().dir}
+                          onSort={(next) =>
+                            void navigate({
+                              search: (prev) => ({ ...prev, sort: next.column as IssueSort, dir: next.dir, page: 1 }),
+                            })
+                          }
+                        />
+                      )}
+                    </For>
                   </Table.Row>
                 </Table.Head>
                 <Table.Body>
@@ -230,6 +260,19 @@ function ProjectDetail() {
               </Table.Root>
             </ResponsiveTable>
           </Show>
+
+          {/*
+            Outside the Show, matching the other list screens: the footer stays
+            put when a filter empties the table rather than the card resizing
+            under the cursor.
+          */}
+          <Pagination
+            page={search().page}
+            totalPages={totalPages()}
+            summary={`Page ${search().page} of ${totalPages()} · ${issues.data?.total ?? 0} issues`}
+            onPrevious={() => void navigate({ search: (p) => ({ ...p, page: p.page - 1 }) })}
+            onNext={() => void navigate({ search: (p) => ({ ...p, page: p.page + 1 }) })}
+          />
         </Card.Body>
       </Card.Root>
     </>

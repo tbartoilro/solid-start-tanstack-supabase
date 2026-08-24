@@ -114,7 +114,8 @@ export type IssueSort = SortableId<typeof issuesResource>;
 
 export const ISSUE_SORTS = sortableIds(issuesResource) as [IssueSort, ...IssueSort[]];
 
-export const ISSUE_DEFAULT_SORT = {
+export const ISSUE_DEFAULT_SEARCH = {
+  page: 1,
   sort: issuesResource.defaultSort.column as IssueSort,
   dir: issuesResource.defaultSort.dir,
 } as const;

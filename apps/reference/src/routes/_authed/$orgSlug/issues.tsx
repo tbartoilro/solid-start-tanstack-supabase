@@ -31,6 +31,8 @@ import {
   allProjectsQuery,
   type IssueFilters,
 } from "~/lib/queries";
+import { SortableHeader } from "~/components/SortableHeader";
+import { issuesResource, ISSUE_SORTS, type IssueSort } from "~/resources/issues";
 
 /**
  * Filter state lives in the URL rather than component state, so a filtered view
@@ -45,6 +47,8 @@ const searchSchema = z.object({
   status: z.array(z.enum(ISSUE_STATUSES)).optional(),
   q: z.string().trim().max(200).optional(),
   page: z.coerce.number().int().min(1).catch(1),
+  sort: z.enum(ISSUE_SORTS).catch(issuesResource.defaultSort.column as IssueSort),
+  dir: z.enum(["asc", "desc"]).catch(issuesResource.defaultSort.dir),
 });
 
 export const Route = createFileRoute("/_authed/$orgSlug/issues")({
@@ -58,6 +62,8 @@ export const Route = createFileRoute("/_authed/$orgSlug/issues")({
       status: deps.status,
       search: deps.q,
       page: deps.page,
+      sort: deps.sort,
+      dir: deps.dir,
     };
     await Promise.all([
       context.queryClient.ensureQueryData(issuesQuery(params.orgSlug, filters)),
@@ -96,6 +102,8 @@ function IssuesPage() {
     status: search().status,
     search: search().q,
     page: search().page,
+    sort: search().sort,
+    dir: search().dir,
   });
 
   const issues = useQuery(() => issuesQuery(params().orgSlug, filters()));
@@ -276,12 +284,16 @@ function IssuesPage() {
               <Table.Root size="sm">
                 <Table.Head>
                   <Table.Row>
-                    <Table.Header>Issue</Table.Header>
-                    <Table.Header>Title</Table.Header>
-                    <Table.Header>Status</Table.Header>
-                    <Table.Header>Priority</Table.Header>
-                    <Table.Header>Assignee</Table.Header>
-                    <Table.Header />
+                    <For each={issuesResource.columns}>
+                      {(column) => (
+                        <SortableHeader
+                          column={column}
+                          sort={() => search().sort}
+                          dir={() => search().dir}
+                          onSort={(next) => setFilter({ sort: next.column, dir: next.dir })}
+                        />
+                      )}
+                    </For>
                   </Table.Row>
                 </Table.Head>
                 <Table.Body>

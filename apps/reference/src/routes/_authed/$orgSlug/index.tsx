@@ -9,6 +9,7 @@ import * as Card from "~/components/ui/card";
 import { Text } from "~/components/ui/text";
 import { issuesQuery, projectsQuery, type IssueFilters } from "~/lib/queries";
 import { PROJECT_DEFAULT_SEARCH } from "~/resources/projects";
+import { ISSUE_DEFAULT_SEARCH } from "~/resources/issues";
 
 /**
  * The statuses an issue counts as "open" in.
@@ -99,6 +100,7 @@ function Overview() {
                         <IssueKey>{p.key}</IssueKey>
                         <Link
                           to="/$orgSlug/projects/$projectId"
+                              search={ISSUE_DEFAULT_SEARCH}
                           params={{ orgSlug: params().orgSlug, projectId: p.id }}
                         >
                           <Text truncate>{p.name}</Text>
