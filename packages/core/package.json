@@ -1,0 +1,19 @@
+{
+  "name": "@orgadmin/core",
+  "version": "0.1.0",
+  "description": "Resource descriptors: the declarative shape a list screen and its server query are both built from",
+  "type": "module",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.5.3",
+    "vitest": "^4.1.11"
+  }
+}

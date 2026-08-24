@@ -1,48 +1,26 @@
 {
-  "name": "solid_start_experimental",
+  "name": "solid-tanstack-supabase",
   "version": "1.0.0",
-  "description": "Production-grade multi-tenant RBAC dashboard: SolidStart v2 + TanStack Router + Supabase",
+  "description": "A configurable admin framework for multi-tenant Postgres apps, and the reference implementation it is built from",
   "type": "module",
   "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "vite dev",
-    "build": "vite build",
-    "start": "node .output/server/index.mjs",
-    "preview": "vite preview",
-    "typecheck": "tsc --noEmit",
-    "db:start": "supabase start",
-    "db:stop": "supabase stop",
-    "db:reset": "supabase db reset",
-    "db:types": "supabase gen types typescript --local > src/lib/database.types.ts",
-    "verify:rbac": "node scripts/verify-rbac.mjs",
-    "verify:ssr": "node scripts/verify-ssr.mjs",
-    "verify:app": "node scripts/verify-app.mjs",
-    "verify": "npm run typecheck && npm run test && npm run verify:rbac && npm run verify:ssr && npm run verify:app",
-    "prepare": "panda codegen",
-    "test": "vitest run",
-    "test:watch": "vitest"
-  },
-  "dependencies": {
-    "@ark-ui/solid": "^5.38.2",
-    "@solidjs/router": "^1.0.0",
-    "@solidjs/start": "^2.0.2",
-    "@supabase/ssr": "^0.12.4",
-    "@supabase/supabase-js": "^2.112.3",
-    "@tanstack/solid-query": "^5.101.4",
-    "@tanstack/solid-router": "^1.170.29",
-    "@tanstack/solid-router-devtools": "^1.167.1",
-    "lucide-solid": "^1.33.0",
-    "nitro": "^3.0.260610-beta",
-    "solid-js": "^1.9.14",
-    "zod": "^4.4.3"
-  },
-  "devDependencies": {
-    "@pandacss/dev": "^1.12.0",
-    "@tanstack/router-plugin": "^1.168.34",
-    "@types/node": "^26.2.0",
-    "typescript": "^5.5.3",
-    "vite": "^8.2.2",
-    "vite-plugin-solid": "^2.11.13",
-    "vitest": "^4.1.11"
+    "dev": "npm run dev -w apps/reference",
+    "build": "npm run build -w apps/reference",
+    "start": "npm run start -w apps/reference",
+    "preview": "npm run preview -w apps/reference",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "test:e2e": "npm run test:e2e -w apps/reference",
+    "verify": "npm run typecheck && npm run test && npm run test:e2e",
+    "db:start": "npm run db:start -w apps/reference",
+    "db:stop": "npm run db:stop -w apps/reference",
+    "db:reset": "npm run db:reset -w apps/reference",
+    "db:types": "npm run db:types -w apps/reference",
+    "db:demo": "npm run db:demo -w apps/reference"
   }
 }

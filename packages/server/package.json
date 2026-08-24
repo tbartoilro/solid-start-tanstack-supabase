@@ -1,0 +1,22 @@
+{
+  "name": "@orgadmin/server",
+  "version": "0.1.0",
+  "description": "Turns a resource descriptor into a validated request schema and a tenant-scoped query",
+  "type": "module",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@orgadmin/core": "*",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.3",
+    "vitest": "^4.1.11"
+  }
+}

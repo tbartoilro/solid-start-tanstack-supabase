@@ -1,0 +1,17 @@
+node_modules
+.output
+.nitro
+.vite
+dist
+styled-system
+.git
+.github
+e2e
+test-results
+playwright-report
+.playwright-mcp
+supabase/.branches
+supabase/.temp
+.env
+.env.*
+!.env.example

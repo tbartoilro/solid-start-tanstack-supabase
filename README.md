@@ -11,20 +11,23 @@ permission granularity) instead of letting a CRUD demo dodge them.
 
 ```
 Node 26 · SolidStart 2.0.2 · @tanstack/solid-router 1.170 · @tanstack/solid-query 5
-Supabase (local CLI) · Postgres RLS · Zod 4 · Panda CSS (ready for Park UI)
+Supabase (local CLI) · Postgres RLS · Zod 4 · Park UI (Ark UI + Panda CSS)
 ```
 
 ---
 
 ## Quick start
 
+This is an npm-workspaces monorepo. The reference app lives in `apps/reference`;
+every script below is a root passthrough, so run them from the repository root.
+
 ```bash
 npm install
-cp .env.example .env          # local Supabase defaults, identical on every machine
+cp apps/reference/.env.example apps/reference/.env   # local Supabase defaults
 
 npm run db:start              # supabase start (needs Docker)
 npm run db:reset              # apply migrations + seed
-npm run db:types              # regenerate src/lib/database.types.ts
+npm run db:types              # regenerate apps/reference/src/lib/database.types.ts
 
 npm run dev                   # http://localhost:4321
 ```
@@ -41,6 +44,28 @@ Seeded accounts, all with password `password123`:
 
 Globex exists so tenant isolation is testable: nothing an Acme user does should
 ever reach it.
+
+### Data at volume
+
+The seed is deliberately tiny, because it is also a test fixture — several
+suites assert its exact contents, down to Acme having two projects and its
+owner belonging to exactly one organization. Five issues is not enough to see
+how pagination, filtering or a 68-row members table actually behave.
+
+```bash
+npm run db:demo               # adds "Northwind Trading" — 68 people, 44 projects, 714 issues
+```
+
+Sign in as `dana.whitfield@northwind.test`, who owns it, or
+`marcus.bello@northwind.test`, a second owner — same password as everyone else.
+
+It builds a **separate** tenant, so Acme and Globex are untouched and the whole
+suite still passes with it loaded. `npm run db:reset` removes it, and re-running
+it is safe: the generated content is seeded, so you get the same backlog back.
+
+The seeded accounts are a convenience, not the only way in — `/signup` creates a
+real account, and `/new-org` makes the creator an owner of a fresh tenant. See
+**Onboarding** below.
 
 ---
 
@@ -62,7 +87,7 @@ render**, which produces the ordering the whole design depends on:
 
 ```
 1. middleware      populates event.locals (session, active org)
-2. routerLoad      matches the route and runs its loaders   ← src/entry-server.tsx
+2. routerLoad      matches the route and runs its loaders   ← apps/reference/src/entry-server.tsx
 3. render          app.tsx reads the already-loaded router
 ```
 
@@ -71,15 +96,15 @@ than arriving after hydration. `StartClientTanstack` (not `StartClient`) is
 required on the client so the tree depth matches what the server rendered.
 
 The two filesystem routers are kept apart by pointing SolidStart's at a
-different directory: `src/api/**` is SolidStart's (HTTP endpoints only), and
-`src/routes/**` belongs entirely to TanStack Router.
+different directory: `apps/reference/src/api/**` is SolidStart's (HTTP endpoints only), and
+`apps/reference/src/routes/**` belongs entirely to TanStack Router.
 
 **Loader data transfer is not automatic.** TanStack Router's own SSR payload
 mechanism is not in play when SolidStart owns the document, so out of the box
 every loader re-runs on hydration. TanStack Query is the transfer vehicle:
 loaders go through `ensureQueryData`, the server inlines the dehydrated cache as
-`#__QUERY_STATE__`, and the client rehydrates before mounting. `npm run
-verify:ssr` asserts zero server-function calls on hydration.
+`#__QUERY_STATE__`, and the client rehydrates before mounting. `apps/reference/e2e/ssr.spec.ts`
+asserts zero server-function calls on hydration.
 
 ### Server responsibility, in four layers
 
@@ -87,10 +112,10 @@ Each layer has one job and is not allowed to do the next one's.
 
 | Layer | Location | Responsibility | Explicitly NOT its job |
 |---|---|---|---|
-| **1. Request middleware** | `src/middleware.ts` | Build a per-request Supabase client, verify the session, resolve the active org, populate `event.locals`. | Any business logic. Any authorization decision. |
-| **2. RPC boundary** | `src/server/rpc/*` | The trust boundary. Validate input, **enforce permission**, translate errors. Thin. | Business rules, SQL. |
-| **3. Domain services** | `src/server/services/*` | Pure logic over an explicit `AuthContext`. Unit-testable with no server. | Reading cookies, deciding who the caller is. |
-| **4. Data + RLS** | Supabase client + `supabase/migrations/` | Queries, and the database-level backstop. | Being the only line of defense. |
+| **1. Request middleware** | `apps/reference/src/middleware.ts` | Build a per-request Supabase client, verify the session, resolve the active org, populate `event.locals`. | Any business logic. Any authorization decision. |
+| **2. RPC boundary** | `apps/reference/src/server/rpc/*` | The trust boundary. Validate input, **enforce permission**, translate errors. Thin. | Business rules, SQL. |
+| **3. Domain services** | `apps/reference/src/server/services/*` | Pure logic over an explicit `AuthContext`. Unit-testable with no server. | Reading cookies, deciding who the caller is. |
+| **4. Data + RLS** | Supabase client + `apps/reference/supabase/migrations/` | Queries, and the database-level backstop. | Being the only line of defense. |
 
 ### Defense in depth — the point of the whole repo
 
@@ -102,13 +127,13 @@ Three independent checks, because the first one is not security at all:
    and the app looks broken but leaks nothing.
 
 2. **Server-function middleware is the real enforcement point.** Every
-   tenant-scoped RPC runs through `authorize()` in `src/server/guard.ts`, in a
+   tenant-scoped RPC runs through `authorize()` in `apps/reference/src/server/guard.ts`, in a
    fixed order: *validate → scope to tenant → authorize → handle*.
 
 3. **RLS is the backstop.** Every table has RLS on, scoped by `org_id`. If
    layers 1–2 are ever wrong, the database still refuses.
 
-`npm run verify:app` proves point 1 by importing the RPC stubs straight from the
+`apps/reference/e2e/rbac.spec.ts` proves point 1 by importing the RPC stubs straight from the
 page and calling them — exactly what a user with devtools open can do.
 
 ### RBAC: JWT for speed, database for truth
@@ -169,13 +194,57 @@ it is a trigger, not service code:
 - **Permissions are read from `role_permissions`**, never mirrored in TypeScript,
   so the UI cannot disagree with the database about what a role may do.
 
+### Onboarding, end to end
+
+The lifecycle a multi-tenant app is useless without, and the order it runs in:
+
+```
+/signup  ->  /select-org  ->  /new-org  ->  /$orgSlug
+                    ^                            |
+                    |                     invite a member
+              /accept-invite  <-- emailed link --+
+```
+
+Four pieces worth knowing about:
+
+**Creating an organization does not use `INSERT ... RETURNING`.** PostgREST turns
+`.select()` on an insert into `RETURNING`, and `RETURNING` output is subject to
+the *read* policy — which requires a membership. The membership is created by the
+`organizations_add_owner` AFTER INSERT trigger, which has not fired when
+`RETURNING` is evaluated, so the whole statement is refused. `createOrg` inserts
+bare and reads the row back in a second statement, by which point the trigger has
+run. No policy is weakened to make this work.
+
+**Joining an organization forces a token refresh.** The `orgs` claim is minted by
+`custom_access_token_hook` when a token is issued, so the instant after a
+membership is created the caller's token does not mention it — and `requireOrg`
+resolves the tenant from that claim, so the user would be bounced from the
+organization they just joined. `refreshClaims()` in `apps/reference/src/server/refresh-claims.ts`
+re-mints the token; the client then drops its cached session, because
+invalidating it is not enough (see the comment in `apps/reference/src/routes/login.tsx`).
+
+**Accepting an invitation is a database function.** `public.accept_invitation`
+inserts the membership and stamps `accepted_at` in one transaction — as two
+PostgREST calls a double-submit can insert twice — and it verifies the caller's
+own email against the invited address. A token proves *someone* was invited, not
+that this caller is the invitee, so without that check a forwarded link is an
+open door. Every rejection raises the same opaque error, so the endpoint cannot
+be used to distinguish "expired" from "already used" from "never existed".
+
+**Mail failures never fail the write.** An invitation row is the source of truth;
+the email is a notification about it. `sendEmail` returns a result instead of
+throwing, so a bounced message cannot make a committed invitation look like it
+failed. With no `RESEND_API_KEY` configured the message — including the accept
+link — is logged instead, so the whole flow is exercisable on a fresh clone with
+no vendor account.
+
 ### Hardening
 
-- **Structured, request-scoped logging** (`src/server/log.ts`) — every line
+- **Structured, request-scoped logging** (`apps/reference/src/server/log.ts`) — every line
   carries the `requestId` from middleware, so an RPC call, the database error it
   caused and the response the user saw can be stitched together from logs alone.
   Sensitive keys are redacted before they reach a sink.
-- **Rate limiting** (`src/server/rate-limit.ts`) on sign-in (per account *and*
+- **Rate limiting** (`apps/reference/src/server/rate-limit.ts`) on sign-in (per account *and*
   per address), sign-up, and invites (per organization, since an account with
   `members.invite` is otherwise a spam relay). In-memory and therefore
   per-process — documented as a speed bump, not an exact global limit.
@@ -196,8 +265,21 @@ npm run build
 SUPABASE_SECRET_KEY=... NODE_ENV=production PORT=3000 node .output/server/index.mjs
 ```
 
-Env validation runs at module load, so a missing variable fails loudly on
-startup rather than surfacing later as a confusing runtime error.
+Env validation runs at module load and throws on anything missing. Note what
+that does *not* mean: Nitro loads route handlers lazily, so a container with no
+`SUPABASE_SECRET_KEY` starts successfully and only fails when a request reaches
+a module that needs it.
+
+`/health` therefore imports `apps/reference/src/server/env.ts` for its side effect, which turns
+it into a readiness check — gate your deployment on it and a misconfigured
+release fails fast instead of going green and then serving 500s.
+
+Note the path. `routeDir: "./api"` in `vite.config.ts` makes `apps/reference/src/api` the route
+*root* for SolidStart's filesystem router, so `apps/reference/src/api/health.ts` is served at
+`/health` and `apps/reference/src/api/auth/callback.ts` at `/auth/callback` — there is no `/api`
+prefix. Requesting `/api/health` hits TanStack Router instead and renders the
+not-found page with a 200, which is exactly the sort of health check that reports
+success forever.
 
 Output is a Nitro build, so the usual presets (Node, Vercel, Cloudflare,
 Netlify) apply via Nitro configuration.
@@ -207,55 +289,167 @@ Netlify) apply via Nitro configuration.
 ## Verification
 
 ```bash
-npm run verify        # typecheck + all three suites
+npm run verify        # typecheck + unit + RLS + end-to-end
 ```
 
 | Command | What it proves |
 |---|---|
-| `npm test` | Pure policy logic with no server or database: the full role-escalation matrix and per-org permission scoping. 28 tests. |
-| `npm run verify:rbac` | RLS, tenant isolation and the JWT hook, hit through PostgREST with real tokens and **the app not running**. 19 checks. |
-| `npm run verify:ssr` | Authenticated loader data is in the server's bytes, hydration refetches nothing, client nav does not reload. 7 checks. |
-| `npm run verify:app` | The app end-to-end, including calling RPC endpoints directly to bypass every route guard. 19 checks. |
+| `npm test` | Two things in one runner. Pure policy logic with no server or browser — the role-escalation matrix, permission scoping, slug derivation, the env schema, the email fallback. And RLS, tenant isolation and the JWT hook asserted straight against PostgREST with **the application not running at all**. |
+| `npm run test:e2e` | The app in a real browser: role-aware UI, the onboarding loop, hydration, and calling RPC endpoints directly to bypass every route guard. 21 tests. |
 
-The two browser suites need headless Chromium with a debug port:
+Prerequisite for the database half and for e2e: the local stack, via `npm run db:start`.
+The pure-logic tests need nothing.
+
+### On skipped tests
+
+The RLS suite in `apps/reference/src/server/rls.integration.test.ts` skips itself when the
+local stack is unreachable, so `npm test` still works on a machine with nothing
+running. That is a real hazard — a test that silently passes without executing
+is worse than no test — so it reports as *skipped* rather than passed, and CI
+fails the build if anything was skipped. If you see skips locally, the database
+is down, not fine.
+
+### Test environment
+
+`.env.test` is committed and loaded by `vite dev --mode test`, which is how the
+Playwright suite runs its server. It exists to set `PUBLIC_APP_URL` to the test
+port, and the reason it is a file rather than an inline variable is worth
+knowing: passing `PUBLIC_APP_URL=... vite dev` on the command line works in CI
+and silently does not work locally. CI has no `.env`, so the shell value is the
+only source; locally Vite loads `.env` into the SSR worker and the shell value
+is lost. The app then mints recovery and invitation links pointing at the dev
+port while the browser is on the test port, the PKCE verifier cookie ends up on
+the wrong origin, and the exchange fails. `.env.[mode]` beats `.env`, so the
+suite behaves identically with or without a developer's `.env`.
+
+### Browser setup
+
+The end-to-end suite uses `@playwright/test`. It replaced two hand-rolled Chrome
+DevTools Protocol drivers (`scripts/verify-app.mjs`, `scripts/verify-ssr.mjs`,
+~400 lines) whose assertions were substring matches against raw HTML; the
+Playwright versions query the accessibility tree, so they express intent and
+survive markup changes. The claim that made the old `verify-rbac.mjs` worth keeping — asserting against
+PostgREST with the application switched off — now lives in
+`apps/reference/src/server/rls.integration.test.ts` instead, so there is one reporting surface
+and the skip gate covers it.
+
+Playwright's bundled Chromium builds are generic Linux binaries and will not
+start on NixOS. Point it at a system browser instead:
 
 ```bash
-chromium --headless=new --remote-debugging-port=9222 &
+CHROMIUM_PATH=/run/current-system/sw/bin/chromium npm run test:e2e
 ```
 
+`shell.nix` provides a pinned Chromium for exactly this.
+
+Note that `apps/reference/src/server/rpc/auth.ts` rate-limits sign-in to 5 attempts per address
+per 15 minutes. The suite therefore authenticates each role **once** and replays
+the session (`apps/reference/e2e/auth.setup.ts`); a suite that logged in per test would throttle
+itself and fail with spurious redirects to `/login`.
+
 > **If a suite fails oddly, check for orphaned dev servers first.** Vite silently
-> moves to the next free port when 4321 is taken, so a stale process will happily
+> moves to the next free port when one is taken, so a stale process will happily
 > serve your tests a previous build:
 > `ps -eo pid,args | grep "[v]ite dev"`
 
 ---
 
-## Adding Park UI
+## What is deliberately not here
 
-Panda CSS is configured and codegen'd; the Park UI CLI is the remaining step.
+A starting point earns trust by being explicit about its edges. These are
+omissions by decision, not oversight:
 
-```bash
-npx @park-ui/cli init          # framework: solid
-npx panda codegen
-npx @park-ui/cli add button card table select badge dialog
+**Billing.** No payment provider is wired in, because committing a template to
+one is the fastest way to make it useless to anyone who prefers another. What is
+provided is the seam:
+
+- `org.billing` exists in the `app_permission` enum, granted to `owner` only, so
+  a billing UI has something to gate on from the first commit.
+- A `subscriptions` table keyed on `organizations` is the natural attachment
+  point; `organizations` already carries the tenant identity everything else
+  hangs off.
+- Seat enforcement belongs in `inviteMember` (`apps/reference/src/server/services/members.ts`),
+  before the invitation row is inserted — that is the single choke point through
+  which a tenant gains members.
+- Plan-level feature gating belongs in the `authorize()` chain in
+  `apps/reference/src/server/guard.ts`, alongside the permission check, so it cannot be
+  forgotten per-endpoint.
+
+**Hard deletes.** `organizations` cascades on delete. That is a reasonable
+default for a demo and a poor one for a paying customer: there is no undo and no
+retention window. A production deployment should add `deleted_at`, filter it in
+the read policies, and move the cascade to a scheduled purge.
+
+**Also absent, on purpose:** realtime subscriptions, i18n, a cross-tenant
+superadmin surface, and file storage. Each is a real decision with real
+trade-offs, and guessing wrong on a consumer's behalf is worse than leaving the
+space empty.
+
+Data export *is* here — `exportOrganization` in `apps/reference/src/server/rpc/org.ts`, gated on
+`org.export` — because a GDPR access request needs a better answer than "an
+engineer runs a query".
+
+---
+
+## The UI layer — Park UI
+
+Every screen is built from [Park UI](https://park-ui.com) components (Ark UI
+behaviour + Panda CSS styling). There is no hand-written stylesheet: Panda's
+`preflight` is the reset and `apps/reference/src/panda.css` is the only CSS file.
+
+```
+apps/reference/src/components/ui/       19 Park UI components, owned by this repo
+apps/reference/src/components/page.tsx  PageHeader, StatTile, ErrorBanner, EmptyState, CenteredCard
+apps/reference/src/components/StatusBadge.tsx  status / priority / issue-key badges
 ```
 
-Already in place so the CLI has nothing to fight:
+Components export namespaced parts, so screens import them either way:
 
-- `panda.config.ts` with `jsxFramework: "solid"` and the **Remove Panda Preset
-  Colors** plugin (Park UI ships its own Radix-based palette; leaving Panda's in
-  place gives you two competing token sets)
-- `postcss.config.cjs`, `styled-system/` codegen, and a `styled-system/*` path alias
-- `@ark-ui/solid` and `lucide-solid` installed
-- `src/panda.css` — the layer entry point, **not yet imported**
+```tsx
+import { Button } from "~/components/ui/button";   // single export
+import * as Card from "~/components/ui/card";      // Root, Header, Body, Title…
+```
 
-**The switch-over:** in `src/app.tsx`, replace `import "./app.css"` with
-`import "./panda.css"`. They are not meant to coexist — Panda's preflight reset
-and `app.css` fight over the same elements.
+### Two things worth knowing before you re-run the CLI
 
-The current markup is deliberately plain and semantic (`.card`, `.table`,
-`.role-badge`, `.status`), so swapping in Park UI components is a substitution
-rather than a rewrite.
+**`@park-ui/cli init` is interactive-only** — no flags, no config file input. The
+setup it would produce is committed instead: `components.json` at the root and
+the `createPreset` wiring in `panda.config.ts`. `@park-ui/cli add <component>`
+*is* scriptable and still works against that config.
+
+**The CLI reports "an unexpected error" but writes the files anyway.** What it
+fails at is fetching transitive registry dependencies, so `button` arrives
+importing a `group` and `loader` that were never downloaded. If you add
+components, close the graph afterwards:
+
+```bash
+cd apps/reference/src/components/ui
+grep -ohE "from '\./[a-z0-9-]+'" *.tsx | sed "s|from './||;s|'||" | sort -u \
+  | while read -r d; do [ -f "$d.tsx" ] || echo "$d"; done
+```
+
+### The Ark v5 bridge
+
+`@park-ui/panda-preset@0.43.1` is built against `@ark-ui/anatomy@3.5.0`, but the
+components the CLI emits target **Ark UI v5**, which added slots and whole
+recipes the preset does not define. Without a bridge, nine components reference
+recipes that do not exist and the build fails.
+
+`panda.config.ts` therefore carries an additive `theme.extend` block supplying
+the missing `dialog` (header/body/footer), `alert` (indicator), `field`
+(requiredIndicator), `select` (indicatorGroup) and `table` (foot) slots, plus
+the `heading`, `group` and `absoluteCenter` recipes and a `spinner`
+`size="inherit"`. **Delete it once the preset catches up to v5** — it is marked
+as such in the file.
+
+### Dark mode
+
+Panda emits dark styles under a `.dark` class, so something has to apply it. An
+inline script in the SSR document head (`apps/reference/src/lib/theme.ts`) reads the stored
+preference, falls back to `prefers-color-scheme`, and sets the class *before the
+stylesheet paints* — putting this in a component effect instead renders light
+first and repaints. `<ThemeToggle>` in the sidebar flips and persists it. The
+script carries the CSP nonce, since `script-src` is strict in production.
 
 > `npm install` warns that esbuild's postinstall is not approved. Panda still
 > works — its platform binary resolves under `@pandacss/config`. If Panda ever
@@ -265,29 +459,35 @@ rather than a rewrite.
 
 ## Layout
 
+An npm-workspaces monorepo. `apps/reference` is this app; `packages/` will hold
+the framework being extracted from it. See `PROJECT.md` for that plan.
+
 ```
-src/
-  entry-server.tsx        the routerLoad seam + dehydrated query state
-  entry-client.tsx        StartClientTanstack
-  router.tsx              per-request router + QueryClient factory
-  middleware.ts           session verification, active org, event.locals
-  app.tsx                 QueryClientProvider + RouterProvider
-  api/                    SolidStart filesystem routes — HTTP endpoints only
-  routes/                 TanStack Router route tree
-    _authed.tsx             session gate (UX only)
-    _authed/$orgSlug.tsx    tenant gate + app shell
-  server/
-    guard.ts              validate -> scope -> authorize -> handle
-    context.ts            AuthContext, requireAuth/requireOrg/requirePermission
-    errors.ts             AppError taxonomy, 404-not-403 for tenant reads
-    on-error.ts           sanitizes thrown errors at the RPC boundary
-    rpc/                  thin HTTP endpoints
-    services/             pure domain logic
-  lib/
-    auth.ts               shared vocabulary, derived from generated DB types
-    queries.ts            query definitions shared by loaders and components
-supabase/migrations/      schema, RBAC, RLS, triggers
-scripts/                  the three verification suites
+apps/reference/
+  supabase/migrations/    schema, RBAC, RLS, triggers
+  e2e/                    Playwright suites
+  src/
+    entry-server.tsx      the routerLoad seam + dehydrated query state
+    entry-client.tsx      StartClientTanstack
+    router.tsx            per-request router + QueryClient factory
+    middleware.ts         session verification, active org, event.locals
+    app.tsx               QueryClientProvider + RouterProvider
+    api/                  SolidStart filesystem routes — HTTP endpoints only
+    routes/               TanStack Router route tree
+      _authed.tsx           session gate (UX only)
+      _authed/$orgSlug.tsx  tenant gate + app shell
+    server/
+      guard.ts            validate -> scope -> authorize -> handle
+      context.ts          AuthContext, requireAuth/requireOrg/requirePermission
+      errors.ts           AppError taxonomy, 404-not-403 for tenant reads
+      on-error.ts         sanitizes thrown errors at the RPC boundary
+      rpc/                thin HTTP endpoints
+      services/           pure domain logic
+    lib/
+      auth.ts             shared vocabulary, derived from generated DB types
+      queries.ts          query definitions shared by loaders and components
+.claude/skills/                   project-scoped skills for Claude Code
+PROJECT.md                status, decisions and the framework roadmap
 ```
 
 ## Known issues worked around

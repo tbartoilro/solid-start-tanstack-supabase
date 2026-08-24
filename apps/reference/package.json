@@ -1,0 +1,52 @@
+{
+  "name": "@app/reference",
+  "version": "1.0.0",
+  "description": "Production-grade multi-tenant RBAC dashboard: SolidStart v2 + TanStack Router + Supabase",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "start": "node .output/server/index.mjs",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "db:start": "supabase start",
+    "db:stop": "supabase stop",
+    "db:reset": "supabase db reset",
+    "db:types": "supabase gen types typescript --local > src/lib/database.types.ts",
+    "verify": "npm run typecheck && npm run test && npm run test:e2e",
+    "prepare": "panda codegen",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "db:demo": "docker exec -i supabase_db_$(grep -m1 '^project_id' supabase/config.toml | cut -d'\"' -f2) psql -U postgres -d postgres -v ON_ERROR_STOP=1 -q -f - < supabase/demo.sql"
+  },
+  "dependencies": {
+    "@ark-ui/solid": "^5.38.2",
+    "@orgadmin/core": "*",
+    "@orgadmin/server": "*",
+    "@solidjs/router": "^1.0.0",
+    "@solidjs/start": "^2.0.2",
+    "@supabase/ssr": "^0.12.4",
+    "@supabase/supabase-js": "^2.112.3",
+    "@tanstack/solid-query": "^5.101.4",
+    "@tanstack/solid-router": "^1.170.29",
+    "@tanstack/solid-router-devtools": "^1.167.1",
+    "@tanstack/solid-table": "^8.21.3",
+    "lucide-solid": "^1.33.0",
+    "nitro": "^3.0.260610-beta",
+    "solid-js": "^1.9.14",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@pandacss/dev": "^1.12.0",
+    "@park-ui/panda-preset": "^0.43.1",
+    "@playwright/test": "^1.62.1",
+    "@tanstack/router-plugin": "^1.168.34",
+    "@types/node": "^26.2.0",
+    "typescript": "^5.5.3",
+    "vite": "^8.2.2",
+    "vite-plugin-solid": "^2.11.13",
+    "vitest": "^4.1.11"
+  }
+}

@@ -8,10 +8,16 @@ dist/
 .env
 .env.*
 !.env.example
+!.env.test
 
 # supabase local stack
-supabase/.branches/
-supabase/.temp/
+apps/*/supabase/.branches/
+apps/*/supabase/.temp/
+
+# browser automation artifacts
+.playwright-mcp/
+test-results/
+playwright-report/
 
 # editors / os
 .DS_Store
@@ -25,3 +31,4 @@ yarn-error.log*
 
 # panda css codegen output
 styled-system/
+apps/*/e2e/.auth/

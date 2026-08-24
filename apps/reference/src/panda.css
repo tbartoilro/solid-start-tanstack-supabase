@@ -1,0 +1,18 @@
+/*
+ * Panda's entry point. The PostCSS plugin replaces these layer declarations
+ * with the generated stylesheet, including the Park UI preset's tokens and
+ * recipes.
+ *
+ * `preflight` (panda.config.ts) supplies the reset, so there is no hand-written
+ * base stylesheet any more — app.css is gone.
+ */
+@layer reset, base, tokens, recipes, utilities;
+
+/* The document background has to come from somewhere; preflight deliberately
+   leaves body unstyled so the app owns it. */
+html,
+body {
+  min-height: 100%;
+  background: var(--colors-bg-canvas);
+  color: var(--colors-fg-default);
+}
