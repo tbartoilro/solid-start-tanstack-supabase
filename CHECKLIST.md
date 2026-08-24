@@ -101,6 +101,31 @@ dashboard showed the first org's data.
 Not a security issue: the server was correct throughout and RLS was never
 bypassed. The stale links pointed at an organization the user does belong to.
 
+## Tables as cards on mobile (reported)
+
+Internal horizontal scrolling was a poor way to read records on a phone — you
+could never see a whole row, and with many rows you scrolled in two axes.
+
+- [x] `ResponsiveTable` in `src/components/data.tsx`: below `md` each row is a
+      card and the off-screen columns stack underneath, labelled. From `md` up
+      it is an ordinary table.
+- [x] Cells declare their card role: `data-label`, `data-label data-block`
+      (long values), `data-primary` (identifying, ordered first), `data-actions`
+      (ordered last).
+- [x] Rows are flex columns on mobile so `order` can lift the identifying cell
+      without reordering the desktop columns.
+- [x] ARIA roles stated in `src/components/ui/table.tsx`. Changing a table
+      element's `display` strips its *implicit* role in every major browser, so
+      without this the tables stop being tables to a screen reader and
+      `getByRole("table")` stops matching.
+- [x] Rejected: rendering a separate mobile card list. Two DOM trees means two
+      Delete buttons and two Selects — the duplicate-control trap already hit
+      with the nav and Sign out button.
+- [ ] All five tables converted
+- [ ] `e2e/responsive.spec.ts` rewritten — it previously asserted the *opposite*
+      contract (table stays wide and scrolls)
+- [ ] Re-verify and visual check at 390 / 768 / 1440
+
 ## Notes for later
 
 - The Ark v5 bridge in `panda.config.ts` is temporary. Delete it when

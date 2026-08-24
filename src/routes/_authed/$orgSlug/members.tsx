@@ -6,7 +6,8 @@ import { createSignal, For, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { Box, HStack, Stack } from "styled-system/jsx";
 import { Can } from "~/components/Can";
-import { CreateBar, TableScroll } from "~/components/data";
+import { ConfirmDialog } from "~/components/ConfirmDialog";
+import { CreateBar, ResponsiveTable } from "~/components/data";
 import { EmptyState, ErrorBanner, PageHeader } from "~/components/page";
 import * as Alert from "~/components/ui/alert";
 import { Badge } from "~/components/ui/badge";
@@ -162,7 +163,14 @@ function MembersPage() {
 
       <Can session={session()} orgId={org().id} permission="members.invite">
         <Card.Root mb="6">
-          <Card.Body>
+          {/*
+            `pt` because Park UI's card body zeroes its top padding — it
+            assumes a Card.Header above supplies that side. These filter and
+            create cards have no header, so without this the first control
+            sits flush against the top border while the other three sides
+            keep their 24px.
+          */}
+          <Card.Body pt="6">
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -275,7 +283,7 @@ function MembersPage() {
 
       <Card.Root mb="6">
         <Card.Body p="0">
-          <TableScroll minW="40rem">
+          <ResponsiveTable>
             <Table.Root size="sm">
               <Table.Head>
                 <Table.Row>
@@ -289,13 +297,21 @@ function MembersPage() {
                 <For each={members.data}>
                   {(m) => (
                     <Table.Row>
-                      <Table.Cell>{m.fullName ?? "—"}</Table.Cell>
+                      {/*
+                        The name leads the card rather than the email, even
+                        though the address is the identifier the server cares
+                        about: a member list is scanned by person, and the
+                        address sits on the very next line anyway.
+                      */}
+                      <Table.Cell data-primary>{m.fullName ?? "—"}</Table.Cell>
                       {/* An address is one unbroken token, so without
                           `anywhere` its full length becomes the column's
                           min-content width and one long address widens the
                           table by several hundred pixels. */}
-                      <Table.Cell overflowWrap="anywhere">{m.email}</Table.Cell>
-                      <Table.Cell>
+                      <Table.Cell data-label="Email" overflowWrap="anywhere">
+                        {m.email}
+                      </Table.Cell>
+                      <Table.Cell data-label="Role">
                         <Can
                           session={session()}
                           orgId={org().id}
@@ -326,24 +342,57 @@ function MembersPage() {
                           />
                         </Can>
                       </Table.Cell>
-                      <Table.Cell textAlign="right">
+                      <Table.Cell data-actions textAlign="right">
                         <Can session={session()} orgId={org().id} permission="members.manage">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            colorPalette="red"
-                            onClick={() =>
-                              void run(() =>
+                          {/*
+                            Revoking someone's access is immediate and there is
+                            no undo — re-adding them means a fresh invitation
+                            they have to accept. Removing yourself is worse
+                            still: you lose the organization from your own
+                            switcher, so that case says so explicitly.
+                          */}
+                          <ConfirmDialog
+                            title={
+                              m.userId === session().user.id
+                                ? "Remove yourself from this organization?"
+                                : `Remove ${m.fullName ?? m.email}?`
+                            }
+                            description={
+                              m.userId === session().user.id ? (
+                                <>
+                                  You will lose access to {org().name} immediately, including
+                                  this page. Getting back in needs an invitation from another
+                                  owner or admin.
+                                </>
+                              ) : (
+                                <>
+                                  {m.email} loses access to {org().name} immediately. The work
+                                  they created stays. Adding them back means sending a new
+                                  invitation.
+                                </>
+                              )
+                            }
+                            confirmLabel="Remove member"
+                            onConfirm={() =>
+                              run(() =>
                                 removeMember({
                                   orgSlug: params().orgSlug,
                                   membershipId: m.membershipId,
                                 }),
                               )
                             }
-                          >
-                            Remove
-                          </Button>
+                            trigger={(triggerProps) => (
+                              <Button
+                                {...triggerProps()}
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                colorPalette="red"
+                              >
+                                Remove
+                              </Button>
+                            )}
+                          />
                         </Can>
                       </Table.Cell>
                     </Table.Row>
@@ -351,7 +400,7 @@ function MembersPage() {
                 </For>
               </Table.Body>
             </Table.Root>
-          </TableScroll>
+          </ResponsiveTable>
         </Card.Body>
       </Card.Root>
 
@@ -380,21 +429,34 @@ function MembersPage() {
                       </Badge>
                     </HStack>
                     <Can session={session()} orgId={org().id} permission="members.manage">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() =>
-                          void run(() =>
+                      {/*
+                        The token in the emailed link stops working the moment
+                        this runs, so an invitation revoked by mistake cannot be
+                        un-revoked — the invitee needs a fresh one.
+                      */}
+                      <ConfirmDialog
+                        title={`Revoke the invitation to ${inv.email}?`}
+                        description={
+                          <>
+                            The link already sent to {inv.email} stops working immediately.
+                            Inviting them again sends a new link.
+                          </>
+                        }
+                        confirmLabel="Revoke invitation"
+                        onConfirm={() =>
+                          run(() =>
                             revokeInvitation({
                               orgSlug: params().orgSlug,
                               invitationId: inv.id,
                             }),
                           )
                         }
-                      >
-                        Revoke
-                      </Button>
+                        trigger={(triggerProps) => (
+                          <Button {...triggerProps()} type="button" variant="ghost" size="sm">
+                            Revoke
+                          </Button>
+                        )}
+                      />
                     </Can>
                   </HStack>
                 )}

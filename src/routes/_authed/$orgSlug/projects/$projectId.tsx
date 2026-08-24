@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createFileRoute } from "@tanstack/solid-router";
 import { createSignal, For, Show } from "solid-js";
 import { Can } from "~/components/Can";
-import { CreateBar, TableScroll } from "~/components/data";
+import { CreateBar, ResponsiveTable } from "~/components/data";
 import { EmptyState, ErrorBanner, PageHeader } from "~/components/page";
 import { IssueKey, PriorityBadge, StatusBadge } from "~/components/StatusBadge";
 import { Button } from "~/components/ui/button";
@@ -81,7 +81,14 @@ function ProjectDetail() {
 
       <Can session={session()} orgId={org().id} permission="issues.write">
         <Card.Root mb="6">
-          <Card.Body>
+          {/*
+            `pt` because Park UI's card body zeroes its top padding — it
+            assumes a Card.Header above supplies that side. These filter and
+            create cards have no header, so without this the first control
+            sits flush against the top border while the other three sides
+            keep their 24px.
+          */}
+          <Card.Body pt="6">
             <form onSubmit={onCreate}>
               <CreateBar
                 action={
@@ -119,7 +126,7 @@ function ProjectDetail() {
             when={(issues.data?.issues.length ?? 0) > 0}
             fallback={<EmptyState title="No issues in this project yet" />}
           >
-            <TableScroll minW="44rem">
+            <ResponsiveTable>
               <Table.Root size="sm">
                 <Table.Head>
                   <Table.Row>
@@ -134,20 +141,26 @@ function ProjectDetail() {
                   <For each={issues.data?.issues}>
                     {(issue) => (
                       <Table.Row>
-                        <Table.Cell>
+                        <Table.Cell data-label="Issue">
                           <IssueKey>{`${project.data?.key}-${issue.number}`}</IssueKey>
                         </Table.Cell>
                         {/* See the note on the same column in issues.tsx:
                             `anywhere` also lowers min-content width, so an
-                            unbroken title cannot widen the table. */}
-                        <Table.Cell overflowWrap="anywhere">{issue.title}</Table.Cell>
-                        <Table.Cell>
+                            unbroken title cannot widen the table.
+
+                            It also leads the card. The key is the identifier,
+                            but it is the title people actually scan a list for,
+                            and the key still reads fine as a labelled line. */}
+                        <Table.Cell data-primary overflowWrap="anywhere">
+                          {issue.title}
+                        </Table.Cell>
+                        <Table.Cell data-label="Status">
                           <StatusBadge status={issue.status} />
                         </Table.Cell>
-                        <Table.Cell>
+                        <Table.Cell data-label="Priority">
                           <PriorityBadge priority={issue.priority} />
                         </Table.Cell>
-                        <Table.Cell>
+                        <Table.Cell data-label="Assignee">
                           {issue.assignee?.fullName ?? issue.assignee?.email ?? "—"}
                         </Table.Cell>
                       </Table.Row>
@@ -155,7 +168,7 @@ function ProjectDetail() {
                   </For>
                 </Table.Body>
               </Table.Root>
-            </TableScroll>
+            </ResponsiveTable>
           </Show>
         </Card.Body>
       </Card.Root>

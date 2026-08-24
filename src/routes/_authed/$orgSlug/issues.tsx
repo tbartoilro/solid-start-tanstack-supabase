@@ -6,7 +6,7 @@ import { createMemo, For, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { Stack, Wrap } from "styled-system/jsx";
 import { z } from "zod";
-import { FilterBar, Pagination, TableScroll } from "~/components/data";
+import { FilterBar, Pagination, ResponsiveTable } from "~/components/data";
 import { EmptyState, PageHeader } from "~/components/page";
 import { IssueKey, PriorityBadge, StatusBadge } from "~/components/StatusBadge";
 import * as Card from "~/components/ui/card";
@@ -109,7 +109,14 @@ function IssuesPage() {
       />
 
       <Card.Root mb="6">
-        <Card.Body>
+          {/*
+            `pt` because Park UI's card body zeroes its top padding — it
+            assumes a Card.Header above supplies that side. These filter and
+            create cards have no header, so without this the first control
+            sits flush against the top border while the other three sides
+            keep their 24px.
+          */}
+        <Card.Body pt="6">
           <FilterBar>
             <Field.Root>
               <Field.Label>Search</Field.Label>
@@ -211,7 +218,7 @@ function IssuesPage() {
               />
             }
           >
-            <TableScroll minW="44rem">
+            <ResponsiveTable>
               <Table.Root size="sm">
                 <Table.Head>
                   <Table.Row>
@@ -226,7 +233,7 @@ function IssuesPage() {
                   <For each={issues.data?.issues}>
                     {(issue) => (
                       <Table.Row>
-                        <Table.Cell>
+                        <Table.Cell data-label="Issue">
                           <IssueKey>{`${issue.project?.key}-${issue.number}`}</IssueKey>
                         </Table.Cell>
                         {/*
@@ -236,15 +243,23 @@ function IssuesPage() {
                           or stack frame — from setting the width of the whole
                           table and turning the scroll container into a
                           kilometre of sideways travel.
+
+                          The title leads the card, not the key. The key is the
+                          precise identifier and is what you quote to a
+                          colleague, but on a phone you are scanning for the
+                          issue you remember by name — and the key stays a
+                          labelled line just below.
                         */}
-                        <Table.Cell overflowWrap="anywhere">{issue.title}</Table.Cell>
-                        <Table.Cell>
+                        <Table.Cell data-primary overflowWrap="anywhere">
+                          {issue.title}
+                        </Table.Cell>
+                        <Table.Cell data-label="Status">
                           <StatusBadge status={issue.status} />
                         </Table.Cell>
-                        <Table.Cell>
+                        <Table.Cell data-label="Priority">
                           <PriorityBadge priority={issue.priority} />
                         </Table.Cell>
-                        <Table.Cell>
+                        <Table.Cell data-label="Assignee">
                           {issue.assignee?.fullName ?? issue.assignee?.email ?? "—"}
                         </Table.Cell>
                       </Table.Row>
@@ -252,7 +267,7 @@ function IssuesPage() {
                   </For>
                 </Table.Body>
               </Table.Root>
-            </TableScroll>
+            </ResponsiveTable>
           </Show>
 
           <Pagination

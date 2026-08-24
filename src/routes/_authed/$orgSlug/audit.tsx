@@ -3,7 +3,7 @@ import { createFileRoute, useNavigate } from "@tanstack/solid-router";
 import { For, Show } from "solid-js";
 import { Box } from "styled-system/jsx";
 import { z } from "zod";
-import { Pagination, TableScroll } from "~/components/data";
+import { Pagination, ResponsiveTable } from "~/components/data";
 import { EmptyState, PageHeader } from "~/components/page";
 import { Badge } from "~/components/ui/badge";
 import * as Card from "~/components/ui/card";
@@ -42,7 +42,7 @@ function AuditPage() {
             when={(audit.data?.entries.length ?? 0) > 0}
             fallback={<EmptyState title="Nothing recorded yet" />}
           >
-            <TableScroll minW="40rem">
+            <ResponsiveTable>
               <Table.Root size="sm">
                 <Table.Head>
                   <Table.Row>
@@ -56,18 +56,25 @@ function AuditPage() {
                   <For each={audit.data?.entries}>
                     {(entry) => (
                       <Table.Row>
-                        <Table.Cell whiteSpace="nowrap" color="fg.muted">
+                        <Table.Cell data-label="When" whiteSpace="nowrap" color="fg.muted">
                           {new Date(entry.createdAt).toLocaleString()}
                         </Table.Cell>
-                        <Table.Cell>
+                        <Table.Cell data-label="Actor">
                           {entry.actor?.fullName ?? entry.actor?.email ?? "system"}
                         </Table.Cell>
-                        <Table.Cell>
+                        {/*
+                          The action names the event, so it heads the card. A
+                          timestamp would be the obvious first column on a
+                          desktop table but it identifies nothing on its own —
+                          scanning a phone screen you are looking for what
+                          happened, then when.
+                        */}
+                        <Table.Cell data-primary>
                           <Badge size="sm" variant="outline" fontFamily="mono">
                             {entry.action}
                           </Badge>
                         </Table.Cell>
-                        <Table.Cell>
+                        <Table.Cell data-label="Details" data-block>
                           {/*
                             Metadata is arbitrary trigger-written JSON, so its
                             serialised length is unbounded. The cap has to live
@@ -80,7 +87,16 @@ function AuditPage() {
                             is the part that identifies it; the full value is on
                             the title attribute.
                           */}
-                          <Box maxW="24rem">
+                          {/*
+                            Narrower at `lg` than further up. This is the only
+                            table wide enough to still overflow once the others
+                            fit: When, Actor and Action need roughly 440px, and
+                            at 1024px the sidebar leaves about 704px, so a 24rem
+                            Details column pushed the total past the container
+                            and it scrolled. Widened again at `xl`, where there
+                            is room for it.
+                          */}
+                          <Box maxW={{ base: "24rem", lg: "15rem", xl: "24rem" }}>
                             <Text
                               as="code"
                               fontFamily="mono"
@@ -99,7 +115,7 @@ function AuditPage() {
                   </For>
                 </Table.Body>
               </Table.Root>
-            </TableScroll>
+            </ResponsiveTable>
           </Show>
 
           <Pagination

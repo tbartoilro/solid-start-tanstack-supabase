@@ -4,7 +4,7 @@ import { createSignal, For, Show } from "solid-js";
 import { Stack } from "styled-system/jsx";
 import { Can } from "~/components/Can";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
-import { CreateBar, TableScroll } from "~/components/data";
+import { CreateBar, ResponsiveTable } from "~/components/data";
 import { EmptyState, ErrorBanner, PageHeader } from "~/components/page";
 import { IssueKey } from "~/components/StatusBadge";
 import { Button } from "~/components/ui/button";
@@ -84,7 +84,14 @@ function ProjectsPage() {
       */}
       <Can session={session()} orgId={org().id} permission="projects.write">
         <Card.Root mb="6">
-          <Card.Body>
+          {/*
+            `pt` because Park UI's card body zeroes its top padding — it
+            assumes a Card.Header above supplies that side. These filter and
+            create cards have no header, so without this the first control
+            sits flush against the top border while the other three sides
+            keep their 24px.
+          */}
+          <Card.Body pt="6">
             <form onSubmit={onCreate}>
               <CreateBar
                 action={
@@ -141,7 +148,7 @@ function ProjectsPage() {
             }
           >
             {/* Four columns do not survive a 390px viewport; scroll rather than wrap. */}
-            <TableScroll minW="40rem">
+            <ResponsiveTable>
               <Table.Root size="sm">
                 <Table.Head>
                   <Table.Row>
@@ -155,10 +162,10 @@ function ProjectsPage() {
                   <For each={projects.data}>
                     {(p) => (
                       <Table.Row>
-                        <Table.Cell>
+                        <Table.Cell data-label="Key">
                           <IssueKey>{p.key}</IssueKey>
                         </Table.Cell>
-                        <Table.Cell>
+                        <Table.Cell data-primary>
                           {/*
                             `truncate` alone does nothing in a table cell: under
                             auto layout the column grows to the widest cell, so a
@@ -181,8 +188,10 @@ function ProjectsPage() {
                             </Show>
                           </Stack>
                         </Table.Cell>
-                        <Table.Cell textAlign="right">{p.openIssues}</Table.Cell>
-                        <Table.Cell textAlign="right">
+                        <Table.Cell data-label="Open issues" textAlign="right">
+                          {p.openIssues}
+                        </Table.Cell>
+                        <Table.Cell data-actions textAlign="right">
                           <Can session={session()} orgId={org().id} permission="projects.delete">
                             {/*
                               Deleting a project cascades to its issues and cannot
@@ -220,7 +229,7 @@ function ProjectsPage() {
                   </For>
                 </Table.Body>
               </Table.Root>
-            </TableScroll>
+            </ResponsiveTable>
           </Show>
         </Card.Body>
       </Card.Root>

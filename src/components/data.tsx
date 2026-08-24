@@ -14,25 +14,127 @@ import { Text } from "~/components/ui/text";
  */
 
 /**
- * Horizontal scroll container for a table.
+ * A table that stops being a table on small screens.
  *
- * A table with five columns cannot be made to fit a 390px phone by shrinking
- * it — the cells just wrap into unreadable stacks. Letting it keep an honest
- * minimum width and scroll sideways preserves the row as a readable unit, and
- * `minW` is what forces that rather than allowing the squeeze.
+ * Sideways scrolling was the previous answer to five columns on a 390px phone.
+ * It keeps rows readable but is a poor way to actually use the data: you cannot
+ * see a whole record at once, and with many rows you are scrolling in two axes
+ * at the same time.
  *
- * The scroll container is the Card body, so the table's own borders still line
- * up with the card edge.
+ * Below `lg` each row becomes a card and each cell becomes a `Label  value`
+ * line, so the columns that were off-screen simply appear underneath. The
+ * header row is hidden because every value now carries its own label.
+ *
+ * `lg` rather than `md` because the sidebar takes 16rem from `md` up. Between
+ * 768px and 1023px that leaves only 450-700px for content, which a five-column
+ * table cannot fit — so it kept its width and scrolled inside its own card,
+ * which is the same inconvenience on a laptop as it was on a phone.
+ *
+ * Labels come from `data-label` on each cell. That is deliberately explicit
+ * rather than read from the header row: a cell can then say something shorter
+ * or clearer than its column heading, and cells that need no label (a row's
+ * action buttons) just omit it and span the full width.
+ *
+ * Note this only changes presentation. The markup stays a real `<table>`, and
+ * `src/components/ui/table.tsx` states the ARIA roles so the semantics survive
+ * the display change.
  */
-export function TableScroll(props: { minW?: string; children: JSX.Element }) {
+export function ResponsiveTable(props: { children: JSX.Element }) {
   return (
     <Box
-      overflowX="auto"
-      // Keeps the horizontal scrollbar from overlapping the last row on
-      // platforms that render one persistently.
-      css={{ "&::-webkit-scrollbar": { height: "0.5rem" } }}
+      // A safety valve, not a layout choice. Nothing should reach it: from `lg`
+      // the table is fluid and every column fits, and below `lg` there are no
+      // columns to overflow.
+      //
+      // There used to be a `min-width: 44rem` floor here as well. It was the
+      // cause of the scrolling rather than a guard against it — the floor held
+      // the table wider than its container, so the container scrolled.
+      lg={{ overflowX: "auto" }}
+      css={{
+        // Everything below is the stacked-card layout, scoped by a max-width
+        // condition so the table above `lg` needs no undoing.
+        lgDown: {
+          "& thead": { display: "none" },
+          "& tbody, & td": { display: "block" },
+
+          // A flex column rather than a block, so `order` can lift the
+          // identifying cell to the top of the card and push the actions to the
+          // bottom no matter where they sit in the column order — which is
+          // chosen for the desktop table, not for this.
+          "& tr": {
+            display: "flex",
+            flexDirection: "column",
+            borderWidth: "1px",
+            borderColor: "border.default",
+            rounded: "l2",
+            p: "3",
+            mb: "3",
+            // The table's own row rule would double up with the card border.
+            borderBottomWidth: "1px",
+          },
+          "& tbody": { p: "3" },
+          "& tbody tr:last-of-type": { mb: "0" },
+
+          "& td": {
+            borderWidth: "0",
+            px: "0",
+            py: "1",
+            // A right-aligned numeric column reads as misaligned once it is a
+            // label/value line, so alignment is reset here.
+            textAlign: "start",
+          },
+
+          // Cells that carry a label become two columns: the label, then the
+          // value that used to live under a distant header.
+          "& td[data-label]": {
+            display: "grid",
+            gridTemplateColumns: "minmax(5rem, 40%) 1fr",
+            gap: "3",
+            alignItems: "baseline",
+            // Without this a grid item fills its track, so a badge or a button
+            // in the value column stretches to the full card width instead of
+            // hugging its own content.
+            justifyItems: "start",
+          },
+          "& td[data-label]::before": {
+            content: "attr(data-label)",
+            color: "fg.muted",
+            fontSize: "xs",
+            fontWeight: "medium",
+          },
+
+          // A value too long to sit beside its label — a JSON blob, a URL —
+          // gets the label on its own line above instead of a 40% gutter it
+          // would then have to squeeze into.
+          "& td[data-label][data-block]": {
+            display: "block",
+          },
+          "& td[data-label][data-block]::before": {
+            display: "block",
+            mb: "1",
+          },
+
+          // The identifying cell leads the card, so it gets no label and a
+          // little more weight than the rest.
+          "& td[data-primary]": {
+            order: -1,
+            fontWeight: "semibold",
+            pb: "2",
+          },
+
+          // Action buttons sit on their own line at the end of the card.
+          "& td[data-actions]": {
+            order: 1,
+            pt: "2",
+            display: "flex",
+            justifyContent: "flex-end",
+            gap: "2",
+          },
+          "& td:empty": { display: "none" },
+        },
+      }}
     >
-      <Box minW={props.minW ?? "44rem"}>{props.children}</Box>
+      {props.children}
     </Box>
   );
 }
