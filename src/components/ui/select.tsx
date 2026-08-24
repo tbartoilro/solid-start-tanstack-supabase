@@ -45,7 +45,28 @@ export const ItemIndicator = (props: HTMLStyledProps<'div'>) => {
   const item = useSelectItemContext()
 
   return (
-    <Show when={item().selected} fallback={<svg aria-hidden="true" />}>
+    <Show
+      when={item().selected}
+      fallback={
+        /*
+          Reserves the tick's space on unselected rows so the label does not
+          shift when selection moves.
+
+          Sized explicitly, which Park UI ships without: an <svg> with no width
+          or height falls back to the CSS replaced-element default of 300x150.
+          Inside a 36px option that sprawls over the rows above it, and because
+          it is hit-testable it swallows their clicks — the top options in a
+          dropdown became unselectable and looked squashed. `pointer-events:
+          none` is belt and braces for a purely decorative placeholder.
+        */
+        <svg
+          aria-hidden="true"
+          width="1em"
+          height="1em"
+          style={{ "pointer-events": "none", "flex-shrink": 0 }}
+        />
+      }
+    >
       <StyledItemIndicator {...props}>
         <CheckIcon />
       </StyledItemIndicator>

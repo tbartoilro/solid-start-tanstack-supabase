@@ -126,6 +126,16 @@ could never see a whole row, and with many rows you scrolled in two axes.
       contract (table stays wide and scrolls)
 - [ ] Re-verify and visual check at 390 / 768 / 1440
 
+## Fixed — dropdown options unclickable
+
+- [x] The first options in any Select were hard to click and looked squashed.
+      Not a min-width problem: Park UI's ItemIndicator renders a bare
+      `<svg aria-hidden="true" />` as the placeholder on unselected rows, with
+      no width or height. An unsized inline SVG falls back to the CSS default
+      300x150, so inside a 36px option it sprawled over the rows above and, being
+      hit-testable, swallowed their clicks. Measured 262x150 before, 14x14 after.
+      Affected every Select in the app, not just the project filter.
+
 ## Notes for later
 
 - The Ark v5 bridge in `panda.config.ts` is temporary. Delete it when
