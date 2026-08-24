@@ -109,6 +109,7 @@ function token(email: string): string {
 const ACME = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 const PROJ_WEB = "cccccccc-cccc-cccc-cccc-cccccccccccc";
 const PROJ_API = "dddddddd-dddd-dddd-dddd-dddddddddddd";
+const OWNER_ID = "11111111-1111-1111-1111-111111111111";
 const MEMBER_ID = "33333333-3333-3333-3333-333333333333";
 const ACME_PROJECTS = 2;
 
@@ -319,5 +320,84 @@ describe.skipIf(!stackUp)("database-enforced invariants", () => {
       `memberships?select=role&user_id=eq.${MEMBER_ID}`,
     );
     expect((body as { role: string }[])[0]!.role).toBe("member");
+  });
+});
+
+describe.skipIf(!stackUp)("organization teardown", () => {
+  /**
+   * Deleting an organization was impossible until the triggers learned to tell
+   * a teardown from an ordinary edit.
+   *
+   * Three of them fire on rows that disappear as a cascade from the parent:
+   * `protect_last_owner` refused the final owner's membership, and both audit
+   * triggers tried to write an entry whose `org_id` no longer had a row to
+   * reference. The "orgs: owner can delete" policy therefore advertised
+   * something the schema then refused, and nothing noticed because no screen
+   * offers the action yet.
+   *
+   * Built and torn down here rather than against a seeded org, because the
+   * assertions in the rest of this file depend on the seed still being there.
+   */
+  it("an owner can delete their organization, and it takes its data with it", async () => {
+    const owner = token("owner@acme.test");
+    const slug = `teardown-${Date.now().toString(36)}`;
+
+    // Two statements, exactly as `createOrg` in src/server/services/orgs.ts
+    // does it and for the same reason: `return=representation` is
+    // INSERT ... RETURNING, whose output is subject to the *read* policy, and
+    // the membership that satisfies it is written by an AFTER INSERT trigger
+    // that has not fired yet. Asking for the row back in the same statement
+    // gets the whole insert refused.
+    //
+    // `created_by` is not optional either — the insert policy is
+    // `with check (created_by = auth.uid())`, so founding an organization in
+    // someone else's name is refused rather than silently reattributed.
+    const created = await asUser(owner, "organizations", {
+      method: "POST",
+      body: JSON.stringify({ slug, name: "Teardown Test", created_by: OWNER_ID }),
+    });
+    expect(created.status).toBe(201);
+
+    const lookup = await asUser(owner, `organizations?select=id&slug=eq.${slug}`);
+    const orgId = (lookup.body as { id: string }[])[0]!.id;
+
+    // The organizations_add_owner trigger grants the creator ownership, which
+    // is what makes this the last-owner case rather than a trivial delete.
+    const before = await asUser(owner, `memberships?select=role&org_id=eq.${orgId}`);
+    expect(before.body).toEqual([{ role: "owner" }]);
+
+    // A project too, so the cascade has to reach the audit trigger on the way
+    // down — that was the second of the three blockers.
+    const proj = await asUser(owner, "projects", {
+      method: "POST",
+      headers: { prefer: "return=representation" },
+      body: JSON.stringify({ org_id: orgId, name: "Doomed", key: "DOOM" }),
+    });
+    expect(proj.status).toBe(201);
+
+    const deleted = await asUser(owner, `organizations?id=eq.${orgId}`, { method: "DELETE" });
+    expect(deleted.status).toBeLessThan(300);
+
+    const after = await asUser(owner, `organizations?select=id&id=eq.${orgId}`);
+    expect(after.body).toEqual([]);
+    const orphans = await asUser(owner, `projects?select=id&org_id=eq.${orgId}`);
+    expect(orphans.body).toEqual([]);
+  });
+
+  it("still refuses to let a live organization lose its last owner", async () => {
+    const owner = token("owner@acme.test");
+
+    const { body } = await asUser(owner, `memberships?select=id&org_id=eq.${ACME}&role=eq.owner`);
+    const ownerMembership = (body as { id: string }[])[0]!.id;
+
+    const { status } = await asUser(owner, `memberships?id=eq.${ownerMembership}`, {
+      method: "DELETE",
+    });
+    expect(status).toBeGreaterThanOrEqual(400);
+
+    // The status is not the assertion — read the row back and confirm the owner
+    // is still there, since an RLS-filtered delete also reports no rows.
+    const after = await asUser(owner, `memberships?select=id&org_id=eq.${ACME}&role=eq.owner`);
+    expect(after.body).toEqual([{ id: ownerMembership }]);
   });
 });
