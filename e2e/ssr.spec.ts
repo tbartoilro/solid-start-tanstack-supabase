@@ -25,6 +25,30 @@ test.describe("with an existing session", () => {
     expect(await res.text()).toContain("Acme Corporation");
   });
 
+  test("hydration reuses the server's data instead of refetching it", async ({ page }) => {
+    // Every server function goes out as a POST to SolidStart's `/_server`
+    // endpoint, whatever the build names the individual handler, so counting
+    // those is a naming-scheme-independent way to see the loaders run.
+    const calls: string[] = [];
+    page.on("request", (req) => {
+      if (req.url().includes("/_server")) calls.push(`${req.method()} ${req.url()}`);
+    });
+
+    await page.goto("/acme");
+
+    // The nav is rendered by the org shell, whose `beforeLoad` needs both the
+    // session and the org — so once it is on screen, every loader on this route
+    // has resolved. Counting before that point would pass because nothing had
+    // happened yet.
+    await expect(page.getByRole("navigation")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Acme Corporation" })).toBeVisible();
+
+    // This is the whole point of `<QueryState />` and `hydrateQueryState()`.
+    // Without them the page still works and still looks right — it just fetches
+    // everything a second time, which nothing else in this suite would notice.
+    expect(calls).toEqual([]);
+  });
+
   test("no hydration mismatch warnings while navigating", async ({ page }) => {
     const problems: string[] = [];
     page.on("console", (msg) => {

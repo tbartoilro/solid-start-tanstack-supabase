@@ -9,13 +9,15 @@ import { defineConfig, devices } from "@playwright/test";
  * of harness before the first assertion. The assertions themselves were also
  * substring matches against raw HTML, so they broke whenever markup moved.
  *
- * scripts/verify-rbac.mjs is deliberately kept: it asserts against PostgREST
- * with the application switched off entirely, which is a different and valuable
- * claim that a browser test cannot make.
+ * The one claim a browser test cannot make — that the policies hold with the
+ * application switched off entirely — lives in src/server/rls.integration.test.ts,
+ * which talks to PostgREST directly under vitest. That used to be
+ * scripts/verify-rbac.mjs; folding it in left one runner instead of two.
  *
  * On NixOS the bundled Chromium builds are generic Linux binaries that will not
- * start, so `channel: "chromium"` points Playwright at the Nix-provided browser
- * (see shell.nix). CHROMIUM_PATH overrides it where that is wrong.
+ * start, so CHROMIUM_PATH points Playwright at the Nix-provided browser (see
+ * shell.nix) via `launchOptions.executablePath` below. Unset elsewhere, which
+ * leaves Playwright's own download in charge.
  */
 export default defineConfig({
   testDir: "./e2e",
