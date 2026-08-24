@@ -425,7 +425,13 @@ function MembersPage() {
         </Card.Body>
       </Card.Root>
 
-      <Card.Root>
+      {/*
+        A named region, not a bare card. It gives screen-reader users a landmark
+        to jump to, and it gives any locator an unambiguous way to say "the
+        invitation is listed" — an invited address also appears in the
+        copy-the-link banner above, so unscoped text matching finds it twice.
+      */}
+      <Card.Root role="region" aria-label="Pending invitations">
         <Card.Header>
           <Card.Title>Pending invitations</Card.Title>
         </Card.Header>

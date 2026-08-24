@@ -43,6 +43,11 @@ const orgSlug = `wonderland-${stamp}`;
  * Matched by text pattern rather than by class or test id so it survives the
  * Park UI migration.
  */
+/** The invitations list, as a named region rather than "wherever this text is". */
+function pendingInvitations(page: import("@playwright/test").Page) {
+  return page.getByRole("region", { name: "Pending invitations" });
+}
+
 async function acceptLinkFromPage(page: import("@playwright/test").Page): Promise<string> {
   const link = page.getByText(/\/accept-invite\?token=[a-f0-9]{64}/);
   await expect(link).toBeVisible();
@@ -95,7 +100,15 @@ test("an invitation can be created and then accepted by its recipient", async ({
   await page.goto(`/${orgSlug}/members`);
   await page.getByLabel("Invite by email").fill(bob);
   await page.getByRole("button", { name: "Send invite" }).click();
-  await expect(page.getByText(bob)).toBeVisible();
+
+  // Scoped to the pending-invitations region, because the address lands on this
+  // page twice: once in the copy-the-link fallback (there is no mail provider
+  // configured in tests, which is the point of acceptLinkFromPage below) and
+  // once in the list. Matching the bare text found both and failed strict mode
+  // whenever the list had finished rendering — it only ever passed by winning a
+  // race against the refetch. The list is also the assertion worth making: it
+  // is the stored invitation, not a transient banner.
+  await expect(pendingInvitations(page).getByText(bob)).toBeVisible();
 
   const acceptUrl = await acceptLinkFromPage(page);
   const token = new URL(acceptUrl).searchParams.get("token") ?? "";
@@ -128,7 +141,7 @@ test("a signed-in user cannot redeem an invitation addressed to someone else", a
   const target = `carol-${stamp}@example.test`;
   await page.getByLabel("Invite by email").fill(target);
   await page.getByRole("button", { name: "Send invite" }).click();
-  await expect(page.getByText(target)).toBeVisible();
+  await expect(pendingInvitations(page).getByText(target)).toBeVisible();
 
   const token = new URL(await acceptLinkFromPage(page)).searchParams.get("token") ?? "";
 
