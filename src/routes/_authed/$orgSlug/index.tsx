@@ -7,7 +7,17 @@ import { IssueKey, StatusBadge } from "~/components/StatusBadge";
 import { Badge } from "~/components/ui/badge";
 import * as Card from "~/components/ui/card";
 import { Text } from "~/components/ui/text";
-import { issuesQuery, projectsQuery } from "~/lib/queries";
+import { issuesQuery, projectsQuery, type IssueFilters } from "~/lib/queries";
+
+/**
+ * The statuses an issue counts as "open" in.
+ *
+ * Mirrors OPEN_STATUSES in src/server/services/projects.ts. Duplicated rather
+ * than imported because that module is server-only, and the alternative — a
+ * dedicated stats endpoint — is more machinery than one tile is worth.
+ */
+const OPEN: IssueFilters["status"] = ["backlog", "todo", "in_progress", "in_review"];
+const openIssuesFilter: IssueFilters = { status: OPEN, page: 1 };
 
 export const Route = createFileRoute("/_authed/$orgSlug/")({
   // Both datasets are prefetched during SSR, so the overview arrives fully
@@ -16,6 +26,7 @@ export const Route = createFileRoute("/_authed/$orgSlug/")({
     await Promise.all([
       context.queryClient.ensureQueryData(projectsQuery(params.orgSlug, 1)),
       context.queryClient.ensureQueryData(issuesQuery(params.orgSlug, { page: 1 })),
+      context.queryClient.ensureQueryData(issuesQuery(params.orgSlug, openIssuesFilter)),
     ]);
   },
   component: Overview,
@@ -35,7 +46,16 @@ function Overview() {
   const projects = useQuery(() => projectsQuery(params().orgSlug, 1));
   const issues = useQuery(() => issuesQuery(params().orgSlug, { page: 1 }));
 
-  const openCount = () => (projects.data?.projects ?? []).reduce((sum, p) => sum + p.openIssues, 0);
+  /*
+   * Counted by the database, not by summing the projects on screen.
+   *
+   * This used to add up `openIssues` across `projects.data`, which is one page
+   * of projects — so past the 25th project the headline number silently
+   * undercounted, and looked plausible while doing it. The paged endpoint
+   * already reports an exact total for any filter, so asking it for the open
+   * statuses is both correct and cheaper than carrying counts per project.
+   */
+  const openIssues = useQuery(() => issuesQuery(params().orgSlug, openIssuesFilter));
 
   return (
     <>
@@ -51,7 +71,7 @@ function Overview() {
       {/* Three across even on a phone — see StatTile for why they are compact. */}
       <Grid columns={3} gap={{ base: "2", md: "4" }} mb="6">
         <StatTile label="Projects" value={projects.data?.total ?? 0} />
-        <StatTile label="Open issues" value={openCount()} />
+        <StatTile label="Open issues" value={openIssues.data?.total ?? 0} />
         <StatTile label="Total issues" value={issues.data?.total ?? 0} />
       </Grid>
 

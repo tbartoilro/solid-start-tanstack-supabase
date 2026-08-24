@@ -3,7 +3,7 @@ import { getSession } from "~/server/rpc/auth";
 import { listIssues } from "~/server/rpc/issues";
 import { listAllMembers, listInvitations, listMembers } from "~/server/rpc/members";
 import { listAuditLog } from "~/server/rpc/org";
-import { getProject, listProjects } from "~/server/rpc/projects";
+import { getProject, listAllProjects, listProjects } from "~/server/rpc/projects";
 
 /**
  * Query definitions shared by route loaders and components.
@@ -30,6 +30,22 @@ export const projectsQuery = (orgSlug: string, page: number) =>
   queryOptions({
     queryKey: ["projects", orgSlug, page] as const,
     queryFn: () => listProjects({ orgSlug, page }),
+  });
+
+/**
+ * Every project in one go, for the pickers.
+ *
+ * Deliberately not `projectsQuery(slug, 1)`: a picker showing only the first
+ * page cannot file an issue against project 26, and offers no clue why. Same
+ * reasoning as [allMembersQuery] below.
+ *
+ * Keyed under the same `projects` prefix as the paged query, so the existing
+ * prefix invalidation after a create or delete refreshes both.
+ */
+export const allProjectsQuery = (orgSlug: string) =>
+  queryOptions({
+    queryKey: ["projects", orgSlug, "all"] as const,
+    queryFn: () => listAllProjects({ orgSlug }),
   });
 
 export const projectQuery = (orgSlug: string, projectId: string) =>

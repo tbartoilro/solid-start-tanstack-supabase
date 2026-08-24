@@ -29,6 +29,19 @@ export async function listProjects(input: unknown) {
   return projects.listProjects(ctx, data);
 }
 
+/**
+ * The unpaginated catalogue, for pickers that must offer every project.
+ *
+ * Separate endpoint rather than a `pageSize=all` escape hatch on the one above,
+ * so the paged endpoint keeps a ceiling that cannot be argued away by input.
+ * Same `projects.read` permission: it exposes nothing the paged call does not,
+ * only in one response and without the open-issue counts.
+ */
+export async function listAllProjects(input: unknown) {
+  const { ctx } = await authorize("projects.read", orgScoped, input);
+  return projects.listAllProjects(ctx);
+}
+
 const getSchema = orgScoped.extend({ projectId: z.guid() });
 
 export async function getProject(input: unknown) {

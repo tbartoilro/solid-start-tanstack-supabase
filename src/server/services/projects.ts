@@ -30,6 +30,13 @@ export interface ProjectDetail extends ProjectSummary {
   createdAt: string;
 }
 
+/** Just enough of a project to render it as an option in a picker. */
+export interface ProjectOption {
+  id: string;
+  name: string;
+  key: string;
+}
+
 export interface ProjectListResult {
   projects: ProjectSummary[];
   total: number;
@@ -90,6 +97,31 @@ export async function listProjects(
     page: input.page,
     pageSize: input.pageSize,
   };
+}
+
+/**
+ * Every project, unpaginated, as just enough to label an option.
+ *
+ * This exists for the pickers — the issue create form and the project filter —
+ * for the same reason `listAllMembers` does. Handing them a page silently makes
+ * every project past `pageSize` unfilterable and, worse, impossible to file an
+ * issue against: the option simply is not offered, which reads as the project
+ * having vanished rather than as a limit.
+ *
+ * Bounded by how many projects an organization has, so there is nothing to page.
+ * Deliberately does not carry `openIssues` — an option needs a name, and the
+ * embedded count is the expensive half of `listProjects`.
+ */
+export async function listAllProjects(ctx: OrgContext): Promise<ProjectOption[]> {
+  const { data, error } = await ctx.db
+    .from("projects")
+    .select("id, name, key")
+    .eq("org_id", ctx.orgId)
+    .order("name");
+
+  if (error) throw new Error(`listAllProjects: ${error.message}`);
+
+  return data ?? [];
 }
 
 export async function getProject(ctx: OrgContext, projectId: string): Promise<ProjectDetail> {

@@ -28,7 +28,7 @@ import { Text } from "~/components/ui/text";
 import {
   allMembersQuery,
   issuesQuery,
-  projectsQuery,
+  allProjectsQuery,
   type IssueFilters,
 } from "~/lib/queries";
 
@@ -61,7 +61,7 @@ export const Route = createFileRoute("/_authed/$orgSlug/issues")({
     };
     await Promise.all([
       context.queryClient.ensureQueryData(issuesQuery(params.orgSlug, filters)),
-      context.queryClient.ensureQueryData(projectsQuery(params.orgSlug, 1)),
+      context.queryClient.ensureQueryData(allProjectsQuery(params.orgSlug)),
       // Prefetched alongside the rest so the assignee pickers are populated on
       // first paint rather than filling in a beat after the table renders.
       // Every role that can reach this page also holds members.read.
@@ -99,7 +99,7 @@ function IssuesPage() {
   });
 
   const issues = useQuery(() => issuesQuery(params().orgSlug, filters()));
-  const projects = useQuery(() => projectsQuery(params().orgSlug, 1));
+  const projects = useQuery(() => allProjectsQuery(params().orgSlug));
   const members = useQuery(() => allMembersQuery(params().orgSlug));
 
   const [error, setError] = createSignal<string | null>(null);
@@ -118,7 +118,7 @@ function IssuesPage() {
     createListCollection({
       items: [
         { label: "All projects", value: "" },
-        ...(projects.data?.projects ?? []).map((p) => ({ label: p.name, value: p.id })),
+        ...(projects.data ?? []).map((p) => ({ label: p.name, value: p.id })),
       ],
     }),
   );
@@ -145,7 +145,7 @@ function IssuesPage() {
           */
           <IssueFormDialog
             mode="create"
-            projects={projects.data?.projects ?? []}
+            projects={projects.data ?? []}
             session={session()}
             org={org()}
             orgSlug={params().orgSlug}
