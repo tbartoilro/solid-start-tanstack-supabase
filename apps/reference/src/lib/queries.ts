@@ -3,6 +3,9 @@ import { getSession } from "~/server/rpc/auth";
 import { listIssues } from "~/server/rpc/issues";
 import { listAllMembers, listInvitations, listMembers } from "~/server/rpc/members";
 import type { AuditSort } from "~/resources/audit";
+import type { IssueSort } from "~/resources/issues";
+import type { MemberSort } from "~/resources/members";
+import type { ProjectSort } from "~/resources/projects";
 import { listAuditLog } from "~/server/rpc/org";
 import { getProject, listAllProjects, listProjects } from "~/server/rpc/projects";
 
@@ -27,10 +30,16 @@ export const sessionQuery = () =>
     staleTime: 5 * 60_000,
   });
 
-export const projectsQuery = (orgSlug: string, page: number) =>
+export interface ProjectFilters {
+  page: number;
+  sort: ProjectSort;
+  dir: "asc" | "desc";
+}
+
+export const projectsQuery = (orgSlug: string, filters: ProjectFilters) =>
   queryOptions({
-    queryKey: ["projects", orgSlug, page] as const,
-    queryFn: () => listProjects({ orgSlug, page }),
+    queryKey: ["projects", orgSlug, filters] as const,
+    queryFn: () => listProjects({ orgSlug, ...filters }),
   });
 
 /**
@@ -61,6 +70,8 @@ export interface IssueFilters {
   assigneeId?: string;
   search?: string;
   page: number;
+  sort?: IssueSort;
+  dir?: "asc" | "desc";
 }
 
 export const issuesQuery = (orgSlug: string, filters: IssueFilters) =>
@@ -71,10 +82,16 @@ export const issuesQuery = (orgSlug: string, filters: IssueFilters) =>
     queryFn: () => listIssues({ orgSlug, ...filters }),
   });
 
-export const membersQuery = (orgSlug: string, page: number) =>
+export interface MemberFilters {
+  page: number;
+  sort: MemberSort;
+  dir: "asc" | "desc";
+}
+
+export const membersQuery = (orgSlug: string, filters: MemberFilters) =>
   queryOptions({
-    queryKey: ["members", orgSlug, page] as const,
-    queryFn: () => listMembers({ orgSlug, page }),
+    queryKey: ["members", orgSlug, filters] as const,
+    queryFn: () => listMembers({ orgSlug, ...filters }),
   });
 
 /**

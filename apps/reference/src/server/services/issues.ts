@@ -1,5 +1,7 @@
 import type { Database } from "~/lib/database.types";
 import type { OrgContext } from "../context";
+import { applyList, type ListInput } from "@orgadmin/server";
+import { issuesResource } from "~/resources/issues";
 import { notFound } from "../errors";
 
 type IssueStatus = Database["public"]["Enums"]["issue_status"];
@@ -25,13 +27,14 @@ export interface IssueListResult {
   pageSize: number;
 }
 
-export interface ListIssuesInput {
+/**
+ * `ListInput` supplies page, pageSize, sort, dir and search — the parts every
+ * list shares. The rest are this resource's own filters.
+ */
+export interface ListIssuesInput extends ListInput {
   projectId?: string;
   status?: IssueStatus[];
   assigneeId?: string;
-  search?: string;
-  page: number;
-  pageSize: number;
 }
 
 export interface CreateIssueInput {
@@ -77,28 +80,21 @@ export async function listIssues(
   ctx: OrgContext,
   input: ListIssuesInput,
 ): Promise<IssueListResult> {
-  const from = (input.page - 1) * input.pageSize;
-  const to = from + input.pageSize - 1;
-
   let query = ctx.db
     .from("issues")
-    .select(SELECT, { count: "exact" })
+    .select(issuesResource.select, { count: "exact" })
     .eq("org_id", ctx.orgId);
 
+  // The resource-agnostic parts — ordering, text search, paging — come from the
+  // descriptor via applyList. These three do not: they are this screen's own
+  // filters, and pushing them into the descriptor would mean teaching it about
+  // every filter any screen might ever want. It owns the columns and the query
+  // shape, not the screen.
   if (input.projectId) query = query.eq("project_id", input.projectId);
   if (input.status?.length) query = query.in("status", input.status);
   if (input.assigneeId) query = query.eq("assignee_id", input.assigneeId);
-  if (input.search) {
-    // `ilike` on a user-supplied string: the Supabase client parameterises the
-    // value, but `%` and `_` are wildcards, so they are escaped to keep the
-    // search literal rather than letting a query scan everything.
-    const escaped = input.search.replace(/[%_\\]/g, (m) => `\\${m}`);
-    query = query.ilike("title", `%${escaped}%`);
-  }
 
-  const { data, error, count } = await query
-    .order("updated_at", { ascending: false })
-    .range(from, to);
+  const { data, error, count } = await applyList(query, issuesResource, input);
 
   if (error) throw new Error(`listIssues: ${error.message}`);
 

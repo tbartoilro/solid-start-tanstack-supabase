@@ -26,7 +26,7 @@ Read `.claude/skills/template-architecture/SKILL.md` before touching server code
 |---|---|
 | 0. Monorepo migration | ☑ **done** — `9140d40`, `1626c1d`, `989d5f0` |
 | 1. `packages/core` — descriptor types | ☑ **done** — `8282f81` |
-| 2. `packages/server` + sorting | ◐ **in progress** — packages and indexes in `b92cac8`; audit log wired and sorting verified end to end. Remaining: the other four lists. |
+| 2. `packages/server` + sorting | ☑ **code-complete** — all four lists wired, sorting verified end to end against the database. Final full-suite run needs confirming. |
 | 3. `DataTable` component (TanStack v8) | ☐ not started |
 | 4. Bulk actions + audit CSV | ☐ not started |
 | 5. `packages/codegen` — introspection CLI | ☐ not started |
@@ -34,7 +34,48 @@ Read `.claude/skills/template-architecture/SKILL.md` before touching server code
 
 **Last known-green baseline:** `989d5f0` (2026-08-24) — typecheck clean · vitest 67/67 · Playwright **69/69**, verified *after* the monorepo migration and identical to the pre-migration baseline at tag `v0.1.0-reference`.
 
-**Next up:** finish Phase 2 by routing the issues, projects and members lists through `listSchemaFor`/`applyList` the way `listAuditLog` now is, then Phase 3.
+**Next up: Phase 3, the `DataTable` component.** Phase 2 is code-complete — all four
+lists go through `listSchemaFor`/`applyList` and every one has sortable headers. See
+**Handoff** immediately below for the exact state and the first thing to do.
+
+---
+
+## Handoff
+
+### State
+- Descriptors exist for all four resources in `apps/reference/src/resources/`:
+  `audit.ts`, `issues.ts`, `projects.ts`, `members.ts`, plus `registry.ts` (the
+  `Permission` augmentation and `TableCellProps`).
+- All four list services/RPCs are wired: schema from `listSchemaFor(resource, orgScoped)`,
+  query through `applyList(query, resource, input)`.
+- `sort`/`dir` live in each route's `validateSearch`, generated from the descriptor, and
+  every screen has a `setSort` that resets to page 1.
+- `SortableHeader` (`apps/reference/src/components/SortableHeader.tsx`) renders headers
+  from `resource.columns`; the four screens map over that array instead of listing `<th>`s.
+- Sidebar links pass `*_DEFAULT_SEARCH` from the resource module, because zod's inferred
+  *input* type for a `.catch()` field is not `T | undefined`, so the router demands all
+  three params.
+
+### First thing to do
+**Confirm the last full run was green.** It was launched but the result was not read — if
+`npm run verify` is not clean, fix that before starting Phase 3. Watch particularly:
+
+- **`issues` now selects `projects!inner`** instead of a plain embed, which is what makes
+  `sortBy: ["projects(key)", "number"]` order the parent rows. It is safe in principle —
+  `issues.project_id` is `not null references projects` — but **verify the issue count is
+  unchanged** (Acme should report 703 with demo data loaded). If it dropped, revert that
+  one word and drop `sortBy` from the `key` column.
+- The four screens' `<Table.Head>` is now a `<For>` over `resource.columns`, so the
+  *number* of headers comes from the descriptor. If a descriptor's column count does not
+  match the cells the body still renders by hand, the table is malformed. Cross-check each
+  screen's body cells against its descriptor column list.
+
+### Then Phase 3
+The `DataTable` notes in Phase 3 below are unusually specific because they came from
+reading the library source rather than its docs. Two are one-character traps:
+`createSolidTable` needs `get data()` **getters**, and `flexRender` must not be used for
+cells — it runs the body under `untrack`, so a cell reading page context goes silently
+stale on an org switch.
 
 ---
 

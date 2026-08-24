@@ -21,6 +21,8 @@ import * as Table from "~/components/ui/table";
 import { Text } from "~/components/ui/text";
 import type { AppRole } from "~/lib/auth";
 import { invitationsQuery, membersQuery } from "~/lib/queries";
+import { membersResource, MEMBER_SORTS, type MemberSort } from "~/resources/members";
+import { SortableHeader } from "~/components/SortableHeader";
 import {
   changeMemberRole,
   inviteMember,
@@ -38,14 +40,18 @@ const roleCollection = createListCollection({
 export const Route = createFileRoute("/_authed/$orgSlug/members")({
   // `.catch()` so a hand-edited `?page=banana` degrades to page 1 rather than
   // throwing at the route boundary.
-  validateSearch: z.object({ page: z.coerce.number().int().min(1).catch(1) }),
+  validateSearch: z.object({
+    page: z.coerce.number().int().min(1).catch(1),
+    sort: z.enum(MEMBER_SORTS).catch(membersResource.defaultSort.column as MemberSort),
+    dir: z.enum(["asc", "desc"]).catch(membersResource.defaultSort.dir),
+  }),
   // Declaring the page as a loader dep is what makes the loader re-run when it
   // changes — and only then. The invitations list is not paged, so it is
   // fetched once and simply re-read from cache on a page change.
   loaderDeps: ({ search }) => search,
   loader: async ({ context, params, deps }) => {
     await Promise.all([
-      context.queryClient.ensureQueryData(membersQuery(params.orgSlug, deps.page)),
+      context.queryClient.ensureQueryData(membersQuery(params.orgSlug, deps)),
       context.queryClient.ensureQueryData(invitationsQuery(params.orgSlug)),
     ]);
   },
@@ -131,8 +137,11 @@ function MembersPage() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
 
-  const members = useQuery(() => membersQuery(params().orgSlug, search().page));
+  const members = useQuery(() => membersQuery(params().orgSlug, search()));
   const invitations = useQuery(() => invitationsQuery(params().orgSlug));
+
+  const setSort = (next: { column: string; dir: "asc" | "desc" }) =>
+    void navigate({ search: { page: 1, sort: next.column as MemberSort, dir: next.dir } });
 
   const totalPages = () =>
     Math.max(1, Math.ceil((members.data?.total ?? 0) / (members.data?.pageSize ?? 25)));
@@ -300,10 +309,16 @@ function MembersPage() {
             <Table.Root size="sm">
               <Table.Head>
                 <Table.Row>
-                  <Table.Header>Name</Table.Header>
-                  <Table.Header>Email</Table.Header>
-                  <Table.Header>Role</Table.Header>
-                  <Table.Header />
+                    <For each={membersResource.columns}>
+                      {(column) => (
+                        <SortableHeader
+                          column={column}
+                          sort={() => search().sort}
+                          dir={() => search().dir}
+                          onSort={setSort}
+                        />
+                      )}
+                    </For>
                 </Table.Row>
               </Table.Head>
               <Table.Body>

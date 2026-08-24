@@ -1,5 +1,7 @@
 import type { Database } from "~/lib/database.types";
 import type { OrgContext } from "../context";
+import { applyList, type ListInput } from "@orgadmin/server";
+import { projectsResource } from "~/resources/projects";
 import { conflict, notFound } from "../errors";
 
 type ProjectUpdate = Database["public"]["Tables"]["projects"]["Update"];
@@ -44,10 +46,7 @@ export interface ProjectListResult {
   pageSize: number;
 }
 
-export interface ListProjectsInput {
-  page: number;
-  pageSize: number;
-}
+export type ListProjectsInput = ListInput;
 
 export interface CreateProjectInput {
   name: string;
@@ -68,19 +67,18 @@ export async function listProjects(
   ctx: OrgContext,
   input: ListProjectsInput,
 ): Promise<ProjectListResult> {
-  const from = (input.page - 1) * input.pageSize;
-  const to = from + input.pageSize - 1;
-
   // `count` counts the top-level rows, so the embedded `issues(count)` and the
   // filter on it narrow each project's open-issue tally without touching the
   // number of projects reported.
-  const { data, error, count } = await ctx.db
-    .from("projects")
-    .select("id, name, key, description, archived_at, issues(count)", { count: "exact" })
-    .eq("org_id", ctx.orgId)
-    .in("issues.status", OPEN_STATUSES)
-    .order("name")
-    .range(from, to);
+  const { data, error, count } = await applyList(
+    ctx.db
+      .from("projects")
+      .select(projectsResource.select, { count: "exact" })
+      .eq("org_id", ctx.orgId)
+      .in("issues.status", OPEN_STATUSES),
+    projectsResource,
+    input,
+  );
 
   if (error) throw new Error(`listProjects: ${error.message}`);
 

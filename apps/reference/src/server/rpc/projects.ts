@@ -1,5 +1,7 @@
 "use server";
 
+import { listSchemaFor } from "@orgadmin/server";
+import { projectsResource } from "~/resources/projects";
 import { z } from "zod";
 import { authorize, orgScoped } from "../guard";
 import * as projects from "../services/projects";
@@ -13,16 +15,12 @@ import * as projects from "../services/projects";
  */
 
 /**
- * Pagination is clamped server-side, because the endpoint is public and a
- * limit the UI happens to respect is not a limit. `.catch` rather than a hard
- * rejection: anything out of range (`pageSize=100000`, `page=0`, `page=abc`)
- * falls back to the default instead of erroring, so a mangled URL still
- * renders a page.
+ * Built from the descriptor: page and pageSize keep the same clamps as before,
+ * and `sort`/`dir` arrive as a `z.enum` over the sortable column ids. The
+ * ceiling still matters — these are public endpoints, so a limit the UI
+ * respects is not a limit.
  */
-const listSchema = orgScoped.extend({
-  page: z.coerce.number().int().min(1).catch(1),
-  pageSize: z.coerce.number().int().min(1).max(100).catch(25),
-});
+const listSchema = listSchemaFor(projectsResource, orgScoped);
 
 export async function listProjects(input: unknown) {
   const { input: data, ctx } = await authorize("projects.read", listSchema, input);

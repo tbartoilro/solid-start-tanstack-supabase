@@ -1,6 +1,8 @@
 import type { AppRole } from "~/lib/auth";
 import type { OrgContext } from "../context";
 import { appUrl, sendEmail } from "../email";
+import { applyList, type ListInput } from "@orgadmin/server";
+import { membersResource } from "~/resources/members";
 import { conflict, forbidden, notFound } from "../errors";
 
 /**
@@ -42,10 +44,7 @@ export interface MemberListResult {
   pageSize: number;
 }
 
-export interface ListMembersInput {
-  page: number;
-  pageSize: number;
-}
+export type ListMembersInput = ListInput;
 
 /** Higher outranks lower. Used only for the escalation guard. */
 const RANK: Record<AppRole, number> = { viewer: 0, member: 1, admin: 2, owner: 3 };
@@ -92,15 +91,14 @@ export async function listMembers(
   ctx: OrgContext,
   input: ListMembersInput,
 ): Promise<MemberListResult> {
-  const from = (input.page - 1) * input.pageSize;
-  const to = from + input.pageSize - 1;
-
-  const { data, error, count } = await ctx.db
-    .from("memberships")
-    .select(MEMBER_SELECT, { count: "exact" })
-    .eq("org_id", ctx.orgId)
-    .order("created_at")
-    .range(from, to);
+  const { data, error, count } = await applyList(
+    ctx.db
+      .from("memberships")
+      .select(membersResource.select, { count: "exact" })
+      .eq("org_id", ctx.orgId),
+    membersResource,
+    input,
+  );
 
   if (error) throw new Error(`listMembers: ${error.message}`);
 

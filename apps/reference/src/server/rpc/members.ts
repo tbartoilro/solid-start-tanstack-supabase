@@ -1,5 +1,7 @@
 "use server";
 
+import { listSchemaFor } from "@orgadmin/server";
+import { membersResource } from "~/resources/members";
 import { z } from "zod";
 import { authorize, orgScoped } from "../guard";
 import { enforceRateLimit } from "../rate-limit";
@@ -8,16 +10,12 @@ import * as members from "../services/members";
 const roleEnum = z.enum(["owner", "admin", "member", "viewer"]);
 
 /**
- * Pagination is clamped server-side, because the endpoint is public and a
- * limit the UI happens to respect is not a limit. `.catch` rather than a hard
- * rejection: anything out of range (`pageSize=100000`, `page=0`, `page=abc`)
- * falls back to the default instead of erroring, so a mangled URL still
- * renders a page.
+ * Built from the descriptor: page and pageSize keep the same clamps as before,
+ * and `sort`/`dir` arrive as a `z.enum` over the sortable column ids. The
+ * ceiling still matters — these are public endpoints, so a limit the UI
+ * respects is not a limit.
  */
-const listSchema = orgScoped.extend({
-  page: z.coerce.number().int().min(1).catch(1),
-  pageSize: z.coerce.number().int().min(1).max(100).catch(25),
-});
+const listSchema = listSchemaFor(membersResource, orgScoped);
 
 export async function listMembers(input: unknown) {
   const { input: data, ctx } = await authorize("members.read", listSchema, input);

@@ -8,6 +8,7 @@ import { Badge } from "~/components/ui/badge";
 import * as Card from "~/components/ui/card";
 import { Text } from "~/components/ui/text";
 import { issuesQuery, projectsQuery, type IssueFilters } from "~/lib/queries";
+import { PROJECT_DEFAULT_SEARCH } from "~/resources/projects";
 
 /**
  * The statuses an issue counts as "open" in.
@@ -24,7 +25,7 @@ export const Route = createFileRoute("/_authed/$orgSlug/")({
   // rendered rather than as a page full of spinners.
   loader: async ({ context, params }) => {
     await Promise.all([
-      context.queryClient.ensureQueryData(projectsQuery(params.orgSlug, 1)),
+      context.queryClient.ensureQueryData(projectsQuery(params.orgSlug, PROJECT_DEFAULT_SEARCH)),
       context.queryClient.ensureQueryData(issuesQuery(params.orgSlug, { page: 1 })),
       context.queryClient.ensureQueryData(issuesQuery(params.orgSlug, openIssuesFilter)),
     ]);
@@ -43,7 +44,7 @@ function Overview() {
   const context = Route.useRouteContext();
   const org = () => context().org;
 
-  const projects = useQuery(() => projectsQuery(params().orgSlug, 1));
+  const projects = useQuery(() => projectsQuery(params().orgSlug, PROJECT_DEFAULT_SEARCH));
   const issues = useQuery(() => issuesQuery(params().orgSlug, { page: 1 }));
 
   /*

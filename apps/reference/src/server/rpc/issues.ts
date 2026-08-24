@@ -1,5 +1,7 @@
 "use server";
 
+import { listSchemaFor } from "@orgadmin/server";
+import { issuesResource } from "~/resources/issues";
 import { z } from "zod";
 import { authorize, orgScoped, withinOrg } from "../guard";
 import { forbidden, notFound } from "../errors";
@@ -9,19 +11,20 @@ const statusEnum = z.enum(["backlog", "todo", "in_progress", "in_review", "done"
 const priorityEnum = z.enum(["none", "low", "medium", "high", "urgent"]);
 
 /**
- * Pagination is clamped server-side, because the endpoint is public and a
- * limit the UI happens to respect is not a limit. `.catch` rather than a hard
- * rejection: anything out of range (`pageSize=100000`, `page=0`, `page=abc`)
- * falls back to the default instead of erroring, so a mangled URL still
- * renders a page.
+ * Page, pageSize, sort, dir and search come from the descriptor; the three
+ * filters below are this screen's own.
+ *
+ * `sort` is the reason this is generated rather than written out: it becomes a
+ * `z.enum` over the descriptor's sortable ids, so an unrecognised column cannot
+ * survive parsing — and `applyList` resolves the surviving id back through the
+ * descriptor, so the caller's string never reaches `.order()`. PostgREST puts
+ * that argument straight into a query parameter which accepts comma-separated
+ * lists and embedded paths, so an allowlist is the only defence that works.
  */
-const listSchema = orgScoped.extend({
+const listSchema = listSchemaFor(issuesResource, orgScoped).extend({
   projectId: z.guid().optional(),
   status: z.array(statusEnum).optional(),
   assigneeId: z.guid().optional(),
-  search: z.string().trim().max(200).optional(),
-  page: z.coerce.number().int().min(1).catch(1),
-  pageSize: z.coerce.number().int().min(1).max(100).catch(25),
 });
 
 export async function listIssues(input: unknown) {

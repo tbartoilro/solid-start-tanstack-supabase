@@ -15,6 +15,8 @@ import { Input } from "~/components/ui/input";
 import * as Table from "~/components/ui/table";
 import { Text } from "~/components/ui/text";
 import { projectsQuery } from "~/lib/queries";
+import { projectsResource, PROJECT_SORTS, type ProjectSort } from "~/resources/projects";
+import { SortableHeader } from "~/components/SortableHeader";
 import { createProject, deleteProject } from "~/server/rpc/projects";
 
 /*
@@ -24,15 +26,19 @@ import { createProject, deleteProject } from "~/server/rpc/projects";
  */
 const searchSchema = z.object({
   page: z.coerce.number().int().min(1).catch(1),
+  // Generated from the descriptor, so a value the server would refuse cannot be
+  // written here without a type error.
+  sort: z.enum(PROJECT_SORTS).catch(projectsResource.defaultSort.column as ProjectSort),
+  dir: z.enum(["asc", "desc"]).catch(projectsResource.defaultSort.dir),
 });
 
 export const Route = createFileRoute("/_authed/$orgSlug/projects/")({
   validateSearch: searchSchema,
   // Declaring the page as a loader dep is what makes the loader re-run when it
   // changes — and only then.
-  loaderDeps: ({ search }) => ({ page: search.page }),
+  loaderDeps: ({ search }) => search,
   loader: ({ context, params, deps }) =>
-    context.queryClient.ensureQueryData(projectsQuery(params.orgSlug, deps.page)),
+    context.queryClient.ensureQueryData(projectsQuery(params.orgSlug, deps)),
   component: ProjectsPage,
 });
 
@@ -51,7 +57,15 @@ function ProjectsPage() {
   const navigate = useNavigate({ from: Route.fullPath });
   const queryClient = useQueryClient();
 
-  const projects = useQuery(() => projectsQuery(params().orgSlug, search().page));
+  const projects = useQuery(() => projectsQuery(params().orgSlug, search()));
+
+  /*
+   * A new sort returns to page 1. Staying on page 2 of a re-ordered list shows
+   * rows with no relationship to what was just on screen, which reads as data
+   * loss rather than a re-sort.
+   */
+  const setSort = (next: { column: string; dir: "asc" | "desc" }) =>
+    void navigate({ search: { page: 1, sort: next.column as ProjectSort, dir: next.dir } });
 
   const totalPages = () =>
     Math.max(1, Math.ceil((projects.data?.total ?? 0) / (projects.data?.pageSize ?? 25)));
@@ -171,10 +185,16 @@ function ProjectsPage() {
               <Table.Root size="sm">
                 <Table.Head>
                   <Table.Row>
-                    <Table.Header>Key</Table.Header>
-                    <Table.Header>Name</Table.Header>
-                    <Table.Header textAlign="right">Open issues</Table.Header>
-                    <Table.Header />
+                    <For each={projectsResource.columns}>
+                      {(column) => (
+                        <SortableHeader
+                          column={column}
+                          sort={() => search().sort}
+                          dir={() => search().dir}
+                          onSort={setSort}
+                        />
+                      )}
+                    </For>
                   </Table.Row>
                 </Table.Head>
                 <Table.Body>
