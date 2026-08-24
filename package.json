@@ -18,7 +18,8 @@
     "prepare": "panda codegen",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "db:demo": "docker exec -i supabase_db_$(grep -m1 '^project_id' supabase/config.toml | cut -d'\"' -f2) psql -U postgres -d postgres -v ON_ERROR_STOP=1 -q -f - < supabase/demo.sql"
   },
   "dependencies": {
     "@ark-ui/solid": "^5.38.2",

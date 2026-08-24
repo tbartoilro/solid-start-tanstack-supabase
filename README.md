@@ -42,6 +42,24 @@ Seeded accounts, all with password `password123`:
 Globex exists so tenant isolation is testable: nothing an Acme user does should
 ever reach it.
 
+### Data at volume
+
+The seed is deliberately tiny, because it is also a test fixture — several
+suites assert its exact contents, down to Acme having two projects and its
+owner belonging to exactly one organization. Five issues is not enough to see
+how pagination, filtering or a 68-row members table actually behave.
+
+```bash
+npm run db:demo               # adds "Northwind Trading" — 68 people, 44 projects, 714 issues
+```
+
+Sign in as `dana.whitfield@northwind.test`, who owns it, or
+`marcus.bello@northwind.test`, a second owner — same password as everyone else.
+
+It builds a **separate** tenant, so Acme and Globex are untouched and the whole
+suite still passes with it loaded. `npm run db:reset` removes it, and re-running
+it is safe: the generated content is seeded, so you get the same backlog back.
+
 The seeded accounts are a convenience, not the only way in — `/signup` creates a
 real account, and `/new-org` makes the creator an owner of a fresh tenant. See
 **Onboarding** below.
