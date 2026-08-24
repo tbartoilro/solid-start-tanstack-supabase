@@ -116,6 +116,13 @@ export function ResponsiveTable(props: { children: JSX.Element }) {
 
           // The identifying cell leads the card, so it gets no label and a
           // little more weight than the rest.
+          /*
+            The selection checkbox governs the whole card, so it leads it —
+            above the identifying cell, which sits at order -1. No label and no
+            5rem gutter: the control's accessible name already says what it is.
+          */
+          "& td[data-select]": { order: -2, pb: "2" },
+
           "& td[data-primary]": {
             order: -1,
             fontWeight: "semibold",

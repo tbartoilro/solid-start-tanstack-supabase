@@ -1,4 +1,7 @@
 import { defineResource, sortableIds, type SortableId } from "@orgadmin/core";
+import { Box } from "styled-system/jsx";
+import { Badge } from "~/components/ui/badge";
+import { Text } from "~/components/ui/text";
 import type { Json } from "~/lib/database.types";
 import type { TableCellProps } from "./registry";
 
@@ -53,6 +56,7 @@ export const auditResource = defineResource<AuditRow, void, TableCellProps>()({
       sortDescFirst: true,
       kind: "date",
       cellProps: { whiteSpace: "nowrap", color: "fg.muted" },
+      cell: (row) => new Date(row.createdAt).toLocaleString(),
     },
     {
       id: "actor",
@@ -63,13 +67,22 @@ export const auditResource = defineResource<AuditRow, void, TableCellProps>()({
       // is unreliable, and making it inner would hide exactly the rows you most
       // want to see — the ones written with no actor, which read as "system".
       kind: "relation",
+      cell: (row) => row.actor?.fullName ?? row.actor?.email ?? "system",
     },
     {
       id: "action",
+      // The action names the event, so it heads the card. A timestamp would be
+      // the obvious first column on a desktop table but identifies nothing on
+      // its own — scanning a phone you look for what happened, then when.
       label: "Action",
       layout: "primary",
       sortBy: "action",
       kind: "text",
+      cell: (row) => (
+        <Badge size="sm" variant="outline" fontFamily="mono">
+          {row.action}
+        </Badge>
+      ),
     },
     {
       id: "metadata",
@@ -78,6 +91,36 @@ export const auditResource = defineResource<AuditRow, void, TableCellProps>()({
       // the label goes on its own line above it instead of sharing a row.
       layout: "block",
       kind: "json",
+      /*
+        Metadata is arbitrary trigger-written JSON, so its serialised length is
+        unbounded. The cap has to live on an inner box: under auto table layout
+        a `td`'s own max-width is ignored, so without this one long entry
+        stretches the table past the scroll container's minimum and squeezes
+        every other column. Two lines then ellipsis keeps rows a uniform height
+        while still showing the start of the payload, which is the part that
+        identifies it; the full value is on the title attribute.
+
+        Narrower at `lg` than further up. This is the only table wide enough to
+        still overflow once the others fit: When, Actor and Action need roughly
+        440px, and at 1024px the sidebar leaves about 704px, so a 24rem Details
+        column pushed the total past the container and it scrolled. Widened
+        again at `xl`, where there is room for it.
+      */
+      cell: (row) => (
+        <Box maxW={{ base: "24rem", lg: "15rem", xl: "24rem" }}>
+          <Text
+            as="code"
+            fontFamily="mono"
+            fontSize="xs"
+            color="fg.muted"
+            wordBreak="break-all"
+            lineClamp={2}
+            title={JSON.stringify(row.metadata)}
+          >
+            {JSON.stringify(row.metadata)}
+          </Text>
+        </Box>
+      ),
     },
   ],
 });

@@ -1,0 +1,19 @@
+{
+  "name": "@orgadmin/codegen",
+  "version": "0.1.0",
+  "description": "Reads a Postgres schema and writes resource descriptor scaffolds",
+  "type": "module",
+  "private": true,
+  "bin": { "orgadmin-introspect": "./src/cli.ts" },
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^5.5.3",
+    "vitest": "^4.1.11"
+  }
+}
