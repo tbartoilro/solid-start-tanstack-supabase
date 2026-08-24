@@ -13,6 +13,30 @@ export default defineConfig({
   // so a hand-run dev server and a test run cannot collide.
   server: { port: 4321 },
 
+  /*
+   * Pre-bundling, in a workspace.
+   *
+   * `@orgadmin/*` are linked packages that ship raw TypeScript rather than a
+   * build. Vite resolves them outside node_modules and so, by design, treats
+   * them as source instead of pre-bundling them — which is what we want, since
+   * editing a package should hot-reload rather than need a rebuild.
+   *
+   * The catch is what they import. Vite optimizes dependencies once at startup
+   * from what it can crawl statically; a dependency it only meets later, inside
+   * a linked package it is treating as source, triggers a re-optimization. Every
+   * module already handed to the browser then has a stale hash, and the next
+   * request for one fails with `504 (Outdated Optimize Dep)`. In practice that
+   * looked like sign-in silently doing nothing.
+   *
+   * Naming those transitive dependencies here gets them optimized up front, so
+   * the discovery never happens mid-session. Add to this list whenever a
+   * package under packages/ takes a new runtime dependency.
+   */
+  optimizeDeps: {
+    include: ["zod"],
+    exclude: ["@orgadmin/core", "@orgadmin/server"],
+  },
+
   // tsconfig `paths` only teaches TypeScript where styled-system lives; Vite
   // resolves modules independently. Without this the build typechecks cleanly
   // and then fails at runtime with "Cannot find module 'styled-system/css'".

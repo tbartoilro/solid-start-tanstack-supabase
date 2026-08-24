@@ -33,9 +33,19 @@ export const Indicator = (props: HTMLStyledProps<'svg'>) => {
         strokeWidth="3px"
         strokeLinecap="round"
         strokeLinejoin="round"
+        /*
+          Hidden from assistive technology, and carrying no <title>.
+
+          The tick is decoration: the control's state is already conveyed by the
+          input's checked property and its accessible name, so a title here adds
+          a second, redundant announcement. It also becomes text content of
+          whatever contains it — which turned every selection cell in a table
+          into a cell reading "Checkmark", and is the same mechanism that once
+          made the browser tab read "Checkmark" instead of the page title.
+        */
+        aria-hidden="true"
         {...props}
       >
-        <title>Checkmark</title>
         {checkbox().indeterminate ? (
           <path d="M5 12h14" />
         ) : checkbox().checked ? (
