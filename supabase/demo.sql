@@ -1,41 +1,48 @@
 -- ============================================================================
--- Demo dataset: a large organization, for exercising the UI under load.
+-- Demo dataset: real volume, for exercising the tables and pagination by hand.
 --
--- Deliberately NOT part of supabase/seed.sql. The seed is a test fixture and
--- several suites assert its exact contents — that Acme has two projects named
--- ["Public API", "Web Platform"], that owner@acme.test belongs to exactly one
--- organization. Bulking the seed up would make those assertions meaningless
--- and every future count fragile.
---
--- So this builds a separate tenant, "Northwind Trading", with its own people.
--- Acme and Globex are untouched, which means the whole suite still passes with
--- this loaded. `npm run db:reset` removes it; re-running is safe and produces
--- exactly the same data.
+-- Deliberately NOT part of supabase/seed.sql. The seed is also a test fixture,
+-- and loading it up would make every count assertion in the suite fragile. This
+-- is opt-in and `npm run db:reset` removes all of it.
 --
 --   npm run db:demo
---   sign in as dana.whitfield@northwind.test / password123
 --
--- Sized to page: 44 projects and 68 members against a page size of 25, ~750
--- issues, and enough audit history to scroll. Every account uses password123.
+-- It fills two organizations:
+--
+--   Acme Corporation  — the one the seeded accounts already belong to, so sign
+--                       in as owner@acme.test / password123 as usual and the
+--                       tables are simply full. 42 projects, ~690 issues, 64
+--                       members. The seed's own rows are left exactly as they
+--                       were, so the suite still recognises them.
+--
+--   Northwind Trading — a second, unrelated tenant, so the organization
+--                       switcher has somewhere to switch to and tenant
+--                       isolation is visible at volume. Owned by
+--                       dana.whitfield@northwind.test.
+--
+-- Sized against a page size of 25 (50 for the audit log): every table pages,
+-- and the issues list pages roughly twenty-eight times.
+--
+-- NOTE: run `npm run db:reset` before running the test suite. Several tests
+-- assert against the seed's exact contents and a few locate a seeded row by
+-- looking at the first page of a list, which this deliberately buries.
 -- ============================================================================
 
 begin;
 
--- Idempotent: drop anything a previous run created.
---
--- Organization first, then the users. Deleting the org cascades to its
--- memberships, projects, issues and audit log; deleting the users then only
--- has profiles left to cascade to. The other order fails, because removing the
--- users takes their memberships with them one at a time and the last owner's
--- removal trips protect_last_owner while the organization is still standing.
-delete from public.organizations where slug = 'northwind';
-delete from auth.users where email like '%@northwind.test';
+-- ----------------------------------------------------------------------------
+-- Helpers
+-- ----------------------------------------------------------------------------
 
--- Same shape as the seed's helper, which drops itself at the end of the seed.
-create or replace function private.demo_user(user_id uuid, user_email text, display_name text)
+-- Creates a confirmed email/password user, mirroring what GoTrue writes on
+-- signup. Same shape as the seed's own helper, which drops itself at the end of
+-- the seed and so is not available here.
+create or replace function private.demo_user(user_email text, display_name text)
 returns uuid
 language plpgsql
 as $$
+declare
+  new_id uuid := gen_random_uuid();
 begin
   insert into auth.users (
     instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -43,7 +50,7 @@ begin
     confirmation_token, recovery_token, email_change_token_new, email_change
   )
   values (
-    '00000000-0000-0000-0000-000000000000', user_id, 'authenticated', 'authenticated',
+    '00000000-0000-0000-0000-000000000000', new_id, 'authenticated', 'authenticated',
     user_email, extensions.crypt('password123', extensions.gen_salt('bf')), now(),
     now(), now(), '{"provider":"email","providers":["email"]}'::jsonb,
     jsonb_build_object('full_name', display_name),
@@ -55,22 +62,23 @@ begin
     last_sign_in_at, created_at, updated_at
   )
   values (
-    gen_random_uuid(), user_id, user_id::text,
-    jsonb_build_object('sub', user_id::text, 'email', user_email),
+    gen_random_uuid(), new_id, new_id::text,
+    jsonb_build_object('sub', new_id::text, 'email', user_email),
     'email', now(), now(), now()
   );
 
-  return user_id;
+  return new_id;
 end;
 $$;
 
-do $$
-declare
-  org_nw   uuid := 'd0000000-d000-4000-8000-000000000001';
-  u_owner  uuid;
-
-  -- 68 people, so the members table pages three times over at 25 a page.
-  people text[] := array[
+-- The shared name pool. Sliced by offset so two organizations never end up
+-- staffed by the same people.
+create or replace function private.demo_people()
+returns text[]
+language sql
+immutable
+as $$
+  select array[
     'Dana Whitfield','Marcus Bello','Priya Raghunathan','Tom Okonkwo','Elena Vasquez',
     'Jonas Lindqvist','Amara Diallo','Wei Chen','Sofia Marchetti','Ibrahim Haddad',
     'Grace Mbeki','Lukas Brandt','Nadia Petrova','Samuel Adeyemi','Hana Kobayashi',
@@ -84,14 +92,51 @@ declare
     'Ingrid Halvorsen','Arjun Bhatt','Beatriz Santos','Nils Eriksson','Layla Haddadi',
     'Stefan Vogel','Nkechi Achebe','Elias Berg','Rosa Delgado','Tariq Mansour',
     'Johanna Klein','Kenji Watanabe','Amelie Dubois','Victor Osei','Anja Kovac',
-    'Ravi Deshpande','Marta Nowicka','Caleb Turner'
+    'Ravi Deshpande','Marta Nowicka','Caleb Turner',
+    'Helena Brandt','Omar Sesay','Lucia Ferrari','Pieter Janssen','Sanne Bakker',
+    'Kofi Mensah','Bianca Lombardi','Andrei Popescu','Yara Nasser','Erik Lindgren',
+    'Chloe Beaumont','Ganesh Iyer','Miriam Katz','Sipho Dlamini','Renata Alves',
+    'Tomas Horak','Fatima Zahra','Lars Pedersen','Nina Sokolova','Joseph Mwangi',
+    'Delphine Girard','Anil Chopra','Greta Hoffmann','Emmanuel Sarr','Paola Rossi',
+    'Bjorn Haugen','Rania Aziz','Duc Nguyen','Carmen Ortega','Felix Neumann',
+    'Aoife Byrne','Krishna Varma','Solveig Dahl','Idris Bello','Valeria Costa',
+    'Henrik Olsen','Noor Rahman','Santiago Vega','Katrin Wagner','Blessing Okoro',
+    'Emil Sandberg','Divya Menon','Rafael Pinto','Marion Leclerc','Zoltan Kiss',
+    'Mariam Toure', 'Casper de Groot','Ling Zhao','Petra Novotna','Adam Whitaker',
+    'Yusuf Demir','Sara Lindholm','Nikhil Joshi','Teresa Marquez','Otto Lehmann',
+    'Hana Farouk','Gabriel Mendes','Ulrike Bauer','Joan Ferrer','Sekou Camara'
   ];
+$$;
 
-  -- Roles skew the way a real org does: mostly members, a few admins, a long
-  -- tail of read-only stakeholders.
-  -- No 'owner' here: the organizations_add_owner trigger already made person 1
-  -- the owner, and one more is promoted explicitly below. Minting owners from a
-  -- modulo would give the org six of them.
+/**
+ * Fills an existing organization with projects, issues and people.
+ *
+ * Additive on purpose: it never touches rows that are already there, which is
+ * what lets it run against Acme without disturbing the seeded fixture the test
+ * suite recognises.
+ *
+ * `proj_from`/`proj_to` slice the project catalogue, so two organizations can
+ * be populated without colliding on `unique (org_id, key)` — Acme already owns
+ * WEB and API, which are entries 1 and 2.
+ */
+create or replace function private.demo_populate(
+  target_org    uuid,
+  proj_from     int,
+  proj_to       int,
+  email_domain  text,
+  member_count  int,
+  name_offset   int
+)
+returns void
+language plpgsql
+as $$
+declare
+  people text[] := private.demo_people();
+
+  -- Roles skew the way a real organization does: mostly members, a few admins,
+  -- a long tail of read-only stakeholders. No 'owner' — each org already has
+  -- one, and minting more from a modulo would be an accident rather than a
+  -- decision.
   roles public.app_role[] := array['admin','admin','admin','member','member',
     'member','member','member','member','member','viewer','viewer'];
 
@@ -162,8 +207,9 @@ declare
     'API documentation, keys and sandboxes'
   ];
 
-  -- Title templates. Combined with an area below, these produce a backlog that
-  -- reads like a real one rather than "Issue 1 … Issue 750".
+  -- Title templates. Crossed with an area below, these produce a backlog that
+  -- reads like a real one rather than "Issue 1 … Issue 690". No template
+  -- supplies an article: every area carries its own.
   templates text[] := array[
     'Fix %s timeout under sustained load',
     '%s returns 500 on an empty payload',
@@ -237,53 +283,36 @@ declare
   priorities public.issue_priority[] := array['none','none','low','low','low','medium','medium',
     'medium','medium','high','high','urgent'];
 
-  member_ids uuid[];
+  pool uuid[];
   project_ids uuid[];
   pid uuid;
-  uid uuid;
   i int;
   n_issues int;
 begin
-  -- Seeded, so the generated content — titles, statuses, priorities, who is
-  -- assigned what — is the same on every run. Row ids still differ, since they
-  -- come from gen_random_uuid().
-  perform setseed(0.4242);
-
-  -- People ------------------------------------------------------------------
-  for i in 1 .. array_length(people, 1) loop
-    uid := private.demo_user(
-      gen_random_uuid(),
-      lower(translate(people[i], ' ', '.')) || '@northwind.test',
-      people[i]
-    );
-    member_ids := array_append(member_ids, uid);
-  end loop;
-
-  u_owner := member_ids[1];
-
-  -- The organizations_add_owner trigger grants the creator the owner
-  -- membership, so person 1 is deliberately not inserted again below.
-  insert into public.organizations (id, slug, name, created_by)
-  values (org_nw, 'northwind', 'Northwind Trading', u_owner);
-
-  for i in 2 .. array_length(member_ids, 1) loop
+  -- People -------------------------------------------------------------------
+  for i in 1 .. member_count loop
     insert into public.memberships (org_id, user_id, role)
-    values (org_nw, member_ids[i], roles[1 + (i % array_length(roles, 1))]);
+    values (
+      target_org,
+      private.demo_user(
+        lower(translate(people[name_offset + i], ' ', '.')) || '@' || email_domain,
+        people[name_offset + i]
+      ),
+      roles[1 + (i % array_length(roles, 1))]
+    );
   end loop;
 
-  -- Two owners, not one: the owner-only screens are worth looking at as a
-  -- non-founder, and the last-owner protection is only interesting when there
-  -- is a second one to remove.
-  update public.memberships
-     set role = 'owner'
-   where org_id = org_nw and user_id = member_ids[2];
+  -- Everyone in the organization, including whoever was already there, so
+  -- assignees in a populated Acme include the seeded accounts.
+  select array_agg(user_id) into pool
+    from public.memberships where org_id = target_org;
 
-  -- Projects ----------------------------------------------------------------
-  for i in 1 .. array_length(proj_names, 1) loop
+  -- Projects -----------------------------------------------------------------
+  for i in proj_from .. proj_to loop
     insert into public.projects (org_id, name, key, description, created_by, created_at)
     values (
-      org_nw, proj_names[i], proj_keys[i], proj_descs[i],
-      member_ids[1 + ((i * 5) % array_length(member_ids, 1))],
+      target_org, proj_names[i], proj_keys[i], proj_descs[i],
+      pool[1 + ((i * 5) % array_length(pool, 1))],
       now() - ((400 - i * 6) || ' days')::interval
     )
     returning id into pid;
@@ -294,32 +323,30 @@ begin
   -- A few archived, so the projects screen has both states to render.
   update public.projects
      set archived_at = now() - interval '20 days'
-   where org_id = org_nw
+   where org_id = target_org
      and key in ('ROBO','I18N','SIGN');
 
-  -- Issues ------------------------------------------------------------------
-  -- Weighted so the big projects carry most of the backlog, which is what
-  -- makes per-project filtering worth trying.
+  -- Issues -------------------------------------------------------------------
+  -- Weighted so the big projects carry most of the backlog, which is what makes
+  -- per-project filtering worth trying.
   for i in 1 .. array_length(project_ids, 1) loop
     n_issues := case when i <= 6 then 45 when i <= 16 then 22 else 8 end;
 
     insert into public.issues (
       org_id, project_id, title, description, status, priority,
-      assignee_id, created_by, created_at
+      assignee_id, created_by, created_at, updated_at
     )
     select
-      org_nw,
+      target_org,
       project_ids[i],
-      -- Areas carry their own article ("the export job"), so a template never
-      -- supplies one. Capitalised afterwards because roughly half the templates
-      -- start with the area itself and would otherwise read lowercase.
-      (
-        select upper(left(t, 1)) || substr(t, 2)
-        from format(
-          templates[1 + floor(random() * array_length(templates, 1))::int],
-          areas[1 + floor(random() * array_length(areas, 1))::int]
-        ) as t
-      ),
+      -- Capitalised because roughly half the templates start with the area
+      -- itself, which would otherwise read lowercase.
+      --
+      -- Built in the lateral below rather than in a scalar subquery here. An
+      -- uncorrelated subquery is hoisted to an InitPlan and evaluated *once per
+      -- statement* — the same caching the RLS policies rely on deliberately —
+      -- so every issue in a project came out with an identical title.
+      upper(left(t.raw_title, 1)) || substr(t.raw_title, 2),
       case when random() < 0.62
         then detail[1 + floor(random() * array_length(detail, 1))::int]
         else null
@@ -329,41 +356,170 @@ begin
       -- Roughly a quarter unassigned, so the "Unassigned" filter has something
       -- to find and the assignee picker has an empty state to show.
       case when random() < 0.74
-        then member_ids[1 + floor(random() * array_length(member_ids, 1))::int]
+        then pool[1 + floor(random() * array_length(pool, 1))::int]
         else null
       end,
-      member_ids[1 + floor(random() * array_length(member_ids, 1))::int],
-      now() - (floor(random() * 300) || ' days')::interval
-                - (floor(random() * 86400) || ' seconds')::interval
-    from generate_series(1, n_issues);
+      pool[1 + floor(random() * array_length(pool, 1))::int],
+      t.created,
+      -- The list sorts on updated_at, so it has to vary too or the ordering is
+      -- whatever the heap happens to return.
+      t.created + (floor(random() * 20) || ' days')::interval
+    from generate_series(1, n_issues) as g
+    cross join lateral (
+      select
+        now() - (floor(random() * 300) || ' days')::interval
+              - (floor(random() * 86400) || ' seconds')::interval as created,
+        format(
+          templates[1 + floor(random() * array_length(templates, 1))::int],
+          areas[1 + floor(random() * array_length(areas, 1))::int]
+        ) as raw_title,
+        -- Referencing g keeps the lateral correlated, so the planner cannot
+        -- pull it out and evaluate it once for the whole insert.
+        g as row_no
+    ) t;
   end loop;
 
-  -- Invitations -------------------------------------------------------------
-  insert into public.invitations (org_id, email, role, invited_by) values
-    (org_nw, 'new.engineer@northwind.test',  'member', u_owner),
-    (org_nw, 'contract.qa@northwind.test',   'viewer', u_owner),
-    (org_nw, 'ops.lead@northwind.test',      'admin',  u_owner);
-
-  -- Audit history -----------------------------------------------------------
+  -- Audit history ------------------------------------------------------------
   -- The triggers wrote a row per project and per membership, but with
-  -- actor_id null (auth.uid() is null under psql) and all at the same instant.
-  -- Both are artefacts of loading data outside a request, so they are fixed up
-  -- here rather than left looking like the audit log is broken.
+  -- actor_id null (auth.uid() is null outside a request) and all at the same
+  -- instant. Both are artefacts of loading data this way, so they are fixed up
+  -- rather than left looking like the audit log is broken.
+  --
+  -- Scoped to rows this run just created: `actor_id is null` is what the seed's
+  -- own entries look like too, and those belong to the fixture.
   update public.audit_log a
-     set actor_id = member_ids[1 + floor(random() * array_length(member_ids, 1))::int],
+     set actor_id = pool[1 + floor(random() * array_length(pool, 1))::int],
          created_at = now() - (floor(random() * 260) || ' days')::interval
                             - (floor(random() * 86400) || ' seconds')::interval
-   where a.org_id = org_nw;
+   where a.org_id = target_org
+     and a.actor_id is null
+     and a.created_at > now() - interval '5 minutes';
 end;
 $$;
 
-drop function private.demo_user(uuid, text, text);
+-- ----------------------------------------------------------------------------
+-- Clean out anything a previous run left behind
+-- ----------------------------------------------------------------------------
+
+-- Note there is deliberately no `session_replication_role = replica` here, which
+-- is the usual trick for quiet bulk loading. It disables *all* triggers,
+-- including the system ones implementing `on delete cascade`, so the Northwind
+-- delete below removed the organization row and orphaned every project under
+-- it — which then collided on the next run.
+do $$
+declare
+  acme uuid := 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+  -- Everything except WEB and API, which the seed owns.
+  demo_keys text[] := array[
+    'MOB','BILL','DW','SRCH','NOTIF','IDP','ADM','DS',
+    'PIPE','PAY','INVSY','ORD','PORT','FRAUD','MAIL','IMG','RECO','AUD',
+    'FLAG','CMS','PART','RPT','SHIP','TAX','SUBS','ROBO','RET','LOYAL',
+    'PRICE','SUPP','CHK','SESS','CFG','LOGS','CHAT','SIGN','I18N','ONB',
+    'RATE','BKP','COMP','DEV'
+  ];
+  demo_users uuid[];
+begin
+  -- Northwind is entirely ours, so the whole tenant goes. This only works
+  -- because the cascade triggers now tell a teardown from an ordinary edit —
+  -- see the 20260824070000 migration.
+  delete from public.organizations where slug = 'northwind';
+  delete from auth.users where email like '%@northwind.test';
+
+  -- Acme is shared with the seed, so only the demo's own rows go. Note who they
+  -- are before removing them, since the audit entries are matched by id.
+  select array_agg(id) into demo_users
+    from public.profiles where email like '%@team.acme.test';
+
+  -- Issues cascade with their project.
+  delete from public.projects where org_id = acme and key = any(demo_keys);
+
+  -- Pending invitations are unique per (org, email), so leaving these behind
+  -- makes the next run fail on a duplicate rather than replace them.
+  delete from public.invitations where org_id = acme and email like '%@team.acme.test';
+
+  delete from auth.users where email like '%@team.acme.test';
+
+  -- Audit entries last, because the three deletes above each *write* more of
+  -- them — project.deleted and member.removed. Cleaning first would leave a
+  -- fresh set behind on every run.
+  delete from public.audit_log
+   where org_id = acme
+     and (
+          (target_type = 'project'    and metadata->>'key' = any(demo_keys))
+       or (target_type = 'membership' and (metadata->>'user_id')::uuid = any(demo_users))
+     );
+end;
+$$;
+
+-- ----------------------------------------------------------------------------
+-- Load
+-- ----------------------------------------------------------------------------
+
+do $$
+declare
+  org_nw uuid := 'd0000000-d000-4000-8000-000000000001';
+  founder uuid;
+begin
+  -- Seeded, so the generated content — titles, statuses, priorities, who is
+  -- assigned what — is the same on every run. Row ids still differ, since they
+  -- come from gen_random_uuid().
+  perform setseed(0.4242);
+
+  -- Acme: additive. Projects 3..44 (WEB and API are the seed's), 60 more
+  -- people, and names taken from the back of the pool so the two organizations
+  -- are staffed by different people.
+  perform private.demo_populate(
+    target_org   => 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+    proj_from    => 3,
+    proj_to      => 44,
+    email_domain => 'team.acme.test',
+    member_count => 60,
+    name_offset  => 68
+  );
+
+  insert into public.invitations (org_id, email, role, invited_by) values
+    ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'contract.qa@team.acme.test', 'viewer',
+     '22222222-2222-2222-2222-222222222222'),
+    ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'ops.lead@team.acme.test', 'admin',
+     '22222222-2222-2222-2222-222222222222');
+
+  -- Northwind: a whole tenant of its own. The founder is created first because
+  -- organizations_add_owner keys off created_by to grant the owner membership.
+  founder := private.demo_user('dana.whitfield@northwind.test', 'Dana Whitfield');
+
+  insert into public.organizations (id, slug, name, created_by)
+  values (org_nw, 'northwind', 'Northwind Trading', founder);
+
+  perform private.demo_populate(
+    target_org   => org_nw,
+    proj_from    => 1,
+    proj_to      => 44,
+    email_domain => 'northwind.test',
+    member_count => 67,
+    name_offset  => 1
+  );
+
+  -- A second owner, so the owner-only screens are worth looking at as someone
+  -- other than the founder.
+  update public.memberships
+     set role = 'owner'
+   where org_id = org_nw
+     and user_id = (select id from public.profiles where email = 'marcus.bello@northwind.test');
+end;
+$$;
+
+drop function private.demo_populate(uuid, int, int, text, int, int);
+drop function private.demo_people();
+drop function private.demo_user(text, text);
 
 commit;
 
 -- What landed.
-select
-  (select count(*) from public.memberships where org_id = 'd0000000-d000-4000-8000-000000000001') as members,
-  (select count(*) from public.projects    where org_id = 'd0000000-d000-4000-8000-000000000001') as projects,
-  (select count(*) from public.issues      where org_id = 'd0000000-d000-4000-8000-000000000001') as issues,
-  (select count(*) from public.audit_log   where org_id = 'd0000000-d000-4000-8000-000000000001') as audit_entries;
+select o.name,
+       (select count(*) from public.memberships m where m.org_id = o.id) as members,
+       (select count(*) from public.projects   p where p.org_id = o.id) as projects,
+       (select count(*) from public.issues     i where i.org_id = o.id) as issues,
+       (select count(*) from public.audit_log  a where a.org_id = o.id) as audit
+  from public.organizations o
+ where o.slug in ('acme', 'northwind')
+ order by o.name;

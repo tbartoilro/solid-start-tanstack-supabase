@@ -111,7 +111,6 @@ const PROJ_WEB = "cccccccc-cccc-cccc-cccc-cccccccccccc";
 const PROJ_API = "dddddddd-dddd-dddd-dddd-dddddddddddd";
 const OWNER_ID = "11111111-1111-1111-1111-111111111111";
 const MEMBER_ID = "33333333-3333-3333-3333-333333333333";
-const ACME_PROJECTS = 2;
 
 /**
  * Resolved at module load rather than in beforeAll, so `describe.skipIf` below
@@ -145,9 +144,19 @@ if (status) {
 
 describe.skipIf(!stackUp)("cross-tenant isolation", () => {
   it("an Acme user sees only Acme projects", async () => {
-    const { body } = await asUser(token("owner@acme.test"), "projects?select=name");
-    const names = (body as { name: string }[]).map((r) => r.name).sort();
-    expect(names).toEqual(["Public API", "Web Platform"]);
+    const { body } = await asUser(token("owner@acme.test"), "projects?select=name,org_id");
+    const rows = body as { name: string; org_id: string }[];
+
+    // Asserted as a property of every row rather than as an exact list. An
+    // exact list also fails when someone merely adds a project — `npm run
+    // db:demo` does — which says nothing about isolation, and it only ever
+    // caught a foreign row by knowing that row's name in advance.
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every((r) => r.org_id === ACME)).toBe(true);
+
+    const names = rows.map((r) => r.name);
+    expect(names).toContain("Web Platform");
+    expect(names).toContain("Public API");
     expect(names).not.toContain("Globex Internal");
   });
 
@@ -249,9 +258,16 @@ describe.skipIf(!stackUp)("JWT claims from custom_access_token_hook", () => {
 });
 
 describe.skipIf(!stackUp)("permission enforcement per role", () => {
-  it("a viewer can read projects", async () => {
-    const { body } = await asUser(token("viewer@acme.test"), "projects?select=id");
-    expect(body).toHaveLength(ACME_PROJECTS);
+  it("a viewer can read projects, and sees exactly what an owner sees", async () => {
+    const asViewer = await asUser(token("viewer@acme.test"), "projects?select=id&order=id");
+    const asOwner = await asUser(token("owner@acme.test"), "projects?select=id&order=id");
+
+    // Compared against the owner rather than against a fixed count: `read` is
+    // the one permission every role holds, so a viewer seeing *fewer* rows than
+    // an owner is the regression worth catching, and a hardcoded number only
+    // catches it while nobody adds a project.
+    expect((asViewer.body as unknown[]).length).toBeGreaterThan(0);
+    expect(asViewer.body).toEqual(asOwner.body);
   });
 
   it("a viewer cannot create an issue", async () => {
