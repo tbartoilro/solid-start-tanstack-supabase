@@ -1,8 +1,0 @@
-{
-  "name": "solid-saas-template",
-  "description": "Skills for working in this multi-tenant SaaS template: SolidStart 2 + TanStack Router + Supabase with role-based access control. Covers where server logic belongs, adding permissions and tenant-scoped resources, the SolidStart/TanStack SSR seam, Park UI conventions, and the non-obvious traps that cost real debugging time.",
-  "version": "0.1.0",
-  "author": {
-    "name": "Tudor Borca"
-  }
-}

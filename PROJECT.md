@@ -15,8 +15,8 @@ reference implementation.
 schema and get org-scoped CRUD dashboards, generated from the tables and hand-editable
 afterwards. The app you see today becomes the framework's reference app and test harness.
 
-Design rationale lives in `README.md` (architecture) and the six skills under `skills/`.
-Read `skills/template-architecture/SKILL.md` before touching server code.
+Design rationale lives in `README.md` (architecture) and the six skills under `.claude/skills/`.
+Read `.claude/skills/template-architecture/SKILL.md` before touching server code.
 
 ---
 
@@ -116,7 +116,7 @@ vite.config.ts vitest.config.ts playwright.config.ts postcss.config.cjs tsconfig
 components.json package.json Dockerfile .env.example .env.test`
 (plus untracked `styled-system/` and `.env` via plain `mv` — they are gitignored).
 
-**What stays at root:** `README.md CHECKLIST.md PROJECT.md LICENSE shell.nix skills/
+**What stays at root:** `README.md CHECKLIST.md PROJECT.md LICENSE shell.nix .claude/skills/
 .claude-plugin/ .github/ .gitignore package-lock.json`
 
 | Breakage | Fix |
@@ -127,7 +127,7 @@ components.json package.json Dockerfile .env.example .env.test`
 | `db:demo` script | Greps `supabase/config.toml` for the container name. Must run with cwd = `apps/reference`. |
 | `.github/workflows/ci.yml` | `supabase start`, `npm run typecheck/test/test:e2e/build` all assume root. Add `working-directory: apps/reference` or route through root passthrough scripts. |
 | `Dockerfile` | `COPY . .` + `npm ci` + `npx panda codegen` + `npm run build` assume a flat root. Make workspace-aware. |
-| `skills/**/SKILL.md` | ~175 citations of `src/…`, `e2e/…`, `supabase/…`. Sweep to `apps/reference/…`. These are the onboarding doc for the next Claude — stale paths make them worse than nothing. |
+| `.claude/skills/**/SKILL.md` | ~175 citations of `src/…`, `e2e/…`, `supabase/…`. Sweep to `apps/reference/…`. These are the onboarding doc for the next Claude — stale paths make them worse than nothing. |
 
 ### Phase 1 — `packages/core`: the descriptor
 

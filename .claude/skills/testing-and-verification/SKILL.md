@@ -19,17 +19,17 @@ Prerequisite for everything except the pure-logic tests: `npm run db:start`.
 
 | Suite | Files | The claim only it can make |
 |---|---|---|
-| Vitest, pure | `src/lib/auth.test.ts`, `src/lib/slug.test.ts`, `src/server/services/members.test.ts`, `src/server/env.test.ts`, `src/server/email.test.ts` | Policy is decidable without a server. The role-escalation matrix is asserted for **every** actor/target pair, and `can()` is asserted to scope permissions per org rather than globally. |
-| Vitest, integration | `src/server/rls.integration.test.ts` | Tenant isolation holds **with the application switched off entirely**. Nothing in that file imports app code or starts a server; it signs in against GoTrue and hits PostgREST with a real user's token. If it passes, the app layer could be bypassed and the data would still hold. No browser test can say that. |
-| Playwright | `e2e/*.spec.ts` | The app: role-aware UI, hydration, onboarding, org switching, responsive layout, and RPC endpoints called directly. |
+| Vitest, pure | `apps/reference/src/lib/auth.test.ts`, `apps/reference/src/lib/slug.test.ts`, `apps/reference/src/server/services/members.test.ts`, `apps/reference/src/server/env.test.ts`, `apps/reference/src/server/email.test.ts` | Policy is decidable without a server. The role-escalation matrix is asserted for **every** actor/target pair, and `can()` is asserted to scope permissions per org rather than globally. |
+| Vitest, integration | `apps/reference/src/server/rls.integration.test.ts` | Tenant isolation holds **with the application switched off entirely**. Nothing in that file imports app code or starts a server; it signs in against GoTrue and hits PostgREST with a real user's token. If it passes, the app layer could be bypassed and the data would still hold. No browser test can say that. |
+| Playwright | `apps/reference/e2e/*.spec.ts` | The app: role-aware UI, hydration, onboarding, org switching, responsive layout, and RPC endpoints called directly. |
 
 `vitest.config.ts` deliberately omits the SolidStart plugin. It sets
-`SUPABASE_SECRET_KEY` in `test.env` only because `src/server/env.ts` validates at
+`SUPABASE_SECRET_KEY` in `test.env` only because `apps/reference/src/server/env.ts` validates at
 module load; nothing under vitest reaches the network except the RLS file.
 
 ## callRpc — how a refusal is actually proven
 
-`e2e/helpers.ts` exports `callRpc(page, module, fn, payload)`. Inside the page it
+`apps/reference/e2e/helpers.ts` exports `callRpc(page, module, fn, payload)`. Inside the page it
 does `await import("/src/server/rpc/<module>.ts")` and calls the export directly.
 Vite serves the **client stub** for a `"use server"` function, so this exercises
 the real transport with the session cookie and no router, no form, no UI.
@@ -43,15 +43,15 @@ expect(res.ok).toBe(false);
 
 Use it for **every** refusal case. A route guard stops navigation, not a POST; a
 hidden button shows the interface is polite, not that the system is safe. Modules
-available are the files in `src/server/rpc/` (`auth`, `invitations`, `issues`,
+available are the files in `apps/reference/src/server/rpc/` (`auth`, `invitations`, `issues`,
 `members`, `org`, `profile`, `projects`).
 
-Reserve full UI journeys for happy paths. `e2e/issue-permissions.spec.ts` is the
+Reserve full UI journeys for happy paths. `apps/reference/e2e/issue-permissions.spec.ts` is the
 model: one owner journey drives create/edit/reassign/delete through the real
 dialogs, and all four viewer refusals are `callRpc` one-liners.
 
 Two ways a refusal test passes for the wrong reason, both guarded in
-`e2e/issue-permissions.spec.ts`:
+`apps/reference/e2e/issue-permissions.spec.ts`:
 
 - **Refused for invisibility, not for permission.** Prove the row is readable
   first — `readableIssueId()` fetches it through an endpoint the caller *is*
@@ -65,12 +65,12 @@ Two ways a refusal test passes for the wrong reason, both guarded in
 1. **Assert on rendered state, not just the URL.** The org switcher was once
    broken such that the URL changed while every screen kept rendering the
    previous tenant — stale `Route.useRouteContext()` reads. Every test passed.
-   `e2e/org-switching.spec.ts` now asserts the switcher label, the `h1`, that
+   `apps/reference/e2e/org-switching.spec.ts` now asserts the switcher label, the `h1`, that
    every `aside nav a` href contains the new slug, and that the members table
    contains the expected user.
 2. **Wait for real content before counting absences.** `expect(...).toHaveCount(0)`
    on a page that has not rendered is a pass for the wrong reason. `navLinks()`
-   in `e2e/helpers.ts` waits for the first link precisely because
+   in `apps/reference/e2e/helpers.ts` waits for the first link precisely because
    `allInnerTexts()` does not auto-wait and returns `[]`.
 3. **Query the accessibility tree**, not innerHTML substrings. That is why the
    hand-rolled CDP drivers were replaced.
@@ -78,11 +78,11 @@ Two ways a refusal test passes for the wrong reason, both guarded in
    under RLS is "no rows matched", which looks identical to success. Read the row
    back with a role that can see it. See the "a member cannot delete a project"
    and "a member cannot promote themselves to owner" cases in
-   `src/server/rls.integration.test.ts`.
+   `apps/reference/src/server/rls.integration.test.ts`.
 
 ## Responsive: two distinct claims
 
-`e2e/responsive.spec.ts` asserts both, and they are not the same thing:
+`apps/reference/e2e/responsive.spec.ts` asserts both, and they are not the same thing:
 
 - The **document** never scrolls sideways (`documentElement.scrollWidth -
   clientWidth <= 1`) across 390/768/1280 and seven routes. A CSS grid `1fr` track
@@ -93,7 +93,7 @@ Two ways a refusal test passes for the wrong reason, both guarded in
   feel. 900px is the band that broke (sidebar takes 16rem from `md`); 1100 is just
   above `lg` where the audit Details column still overflowed.
 
-Below `lg`, `ResponsiveTable` in `src/components/data.tsx` turns rows into cards:
+Below `lg`, `ResponsiveTable` in `apps/reference/src/components/data.tsx` turns rows into cards:
 `thead` is hidden and each `td` carries `data-label`, `data-primary` or
 `data-actions`. An unlabelled non-empty `td` fails the "every cell in a card"
 test. The labels are `::before` content — no text locator can see them, so those
@@ -120,11 +120,11 @@ otherwise binds `[::1]` only and the readiness probe never connects.
 
 **RLS tests fail after you clicked around.** They assert exact seed contents —
 `["Public API", "Web Platform"]`, `ACME_PROJECTS = 2`, the owner belonging to
-exactly one org, seeded uuids from `supabase/seed.sql`. Fix with `npm run db:reset`.
+exactly one org, seeded uuids from `apps/reference/supabase/seed.sql`. Fix with `npm run db:reset`.
 CI is unaffected: it boots a fresh Supabase and runs vitest **before** Playwright.
 This is why e2e tests that create data must create their own (`Owner journey
-${Date.now().toString(36)}` in `e2e/issue-permissions.spec.ts`) and why
-`e2e/org-switching.spec.ts` signs up a fresh user rather than giving a seeded one
+${Date.now().toString(36)}` in `apps/reference/e2e/issue-permissions.spec.ts`) and why
+`apps/reference/e2e/org-switching.spec.ts` signs up a fresh user rather than giving a seeded one
 a second org.
 
 **HTTP 503 "Vite environment \"ssr\" is unavailable".** Thrown by
@@ -138,11 +138,11 @@ green, on purpose: an earlier version guarded with `if (!stackUp) return` and
 reported a full green suite against no database. CI parses the vitest JSON report
 and fails on any `pending`/`skipped`/`todo`.
 
-**Spurious "still on /login".** `src/server/rpc/auth.ts` rate-limits sign-in to 5
-attempts per address per 15 minutes. `e2e/auth.setup.ts` signs in `viewer@acme.test`
-and `owner@acme.test` once and saves storage state to `STATES` in `e2e/helpers.ts`.
+**Spurious "still on /login".** `apps/reference/src/server/rpc/auth.ts` rate-limits sign-in to 5
+attempts per address per 15 minutes. `apps/reference/e2e/auth.setup.ts` signs in `viewer@acme.test`
+and `owner@acme.test` once and saves storage state to `STATES` in `apps/reference/e2e/helpers.ts`.
 Use `test.use({ storageState: STATES.owner })`; do not call `signIn()` per test
-unless the test *is* about signing in (`e2e/ssr.spec.ts`, `e2e/account.spec.ts`,
+unless the test *is* about signing in (`apps/reference/e2e/ssr.spec.ts`, `apps/reference/e2e/account.spec.ts`,
 which need a fresh or dedicated account because changing a password invalidates
 sessions).
 
@@ -156,16 +156,16 @@ sessions).
   assertion. The hidden control is worth asserting too, but it proves nothing
   about safety.
 - New table or route → add it to the `ROUTES`/`TABLES` arrays in
-  `e2e/responsive.spec.ts`. Add widths only for a distinct behaviour; the comment
+  `apps/reference/e2e/responsive.spec.ts`. Add widths only for a distinct behaviour; the comment
   there records that intermediate widths quadrupled runtime and asserted nothing.
 - Anything a test creates in the seeded `acme` org must be uniquely named and
   cleaned up, or it drifts the counts the RLS suite asserts. Issue numbers are
   per-project and monotonic, so locate rows by title, never by key like `WEB-3`.
 - Never weaken an assertion to make a suite green. A skipped or silently-passing
   test is worse than no test — that is the reasoning behind the CI skip gate.
-- Seeded accounts (`supabase/seed.sql`): `owner@`, `admin@`, `member@`,
+- Seeded accounts (`apps/reference/supabase/seed.sql`): `owner@`, `admin@`, `member@`,
   `viewer@acme.test`, `outsider@globex.test`, all with `PASSWORD` from
-  `e2e/helpers.ts`. Globex exists so isolation is testable — do not give an Acme
+  `apps/reference/e2e/helpers.ts`. Globex exists so isolation is testable — do not give an Acme
   user a Globex membership.
 
 Not present: no component/unit tests for Solid components, no visual regression

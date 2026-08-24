@@ -14,22 +14,22 @@ answers "may the current user do this here" by joining `memberships` to `role_pe
 Every RLS policy and every server-side check funnels through that one function, so
 **granting a permission to a role is an INSERT, not a code change**. The JWT carries only
 membership edges (`orgs` claim), never a resolved permission set — see the header comment
-in `supabase/migrations/20260820120100_rbac.sql` for why that cache boundary is drawn there.
+in `apps/reference/supabase/migrations/20260820120100_rbac.sql` for why that cache boundary is drawn there.
 
 Read these before editing:
 
-- `supabase/migrations/20260820120000_schema.sql` — the enum (lines ~21-33)
-- `supabase/migrations/20260820120100_rbac.sql` — `role_permissions` seed, `private.authorize`, the JWT hook
-- `supabase/migrations/20260820120200_rls.sql` — every policy, and the two performance rules
-- `supabase/migrations/20260820120400_authorize_rpc.sql` — `public.has_permission`, the callable wrapper
-- `src/server/guard.ts`, `src/server/context.ts`, `src/lib/auth.ts`
+- `apps/reference/supabase/migrations/20260820120000_schema.sql` — the enum (lines ~21-33)
+- `apps/reference/supabase/migrations/20260820120100_rbac.sql` — `role_permissions` seed, `private.authorize`, the JWT hook
+- `apps/reference/supabase/migrations/20260820120200_rls.sql` — every policy, and the two performance rules
+- `apps/reference/supabase/migrations/20260820120400_authorize_rpc.sql` — `public.has_permission`, the callable wrapper
+- `apps/reference/src/server/guard.ts`, `apps/reference/src/server/context.ts`, `apps/reference/src/lib/auth.ts`
 
 ## Recipe
 
 ### 1. Add the enum value — in a NEW migration
 
 Never edit an applied migration; the CLI tracks them by hash and other clones have already
-run them. Create `supabase/migrations/<timestamp>_<name>.sql` (or `supabase migration new <name>`):
+run them. Create `apps/reference/supabase/migrations/<timestamp>_<name>.sql` (or `supabase migration new <name>`):
 
 ```sql
 alter type public.app_permission add value if not exists 'reports.read';
@@ -65,7 +65,7 @@ claim holds memberships, not permissions.
 
 ### 4. Enforce at the RPC boundary
 
-Every tenant-scoped `"use server"` function goes through `authorize()` from `src/server/guard.ts`:
+Every tenant-scoped `"use server"` function goes through `authorize()` from `apps/reference/src/server/guard.ts`:
 
 ```ts
 const schema = orgScoped.extend({ page: z.coerce.number().int().min(1).catch(1) });
@@ -77,9 +77,9 @@ export async function listReports(input: unknown) {
 ```
 
 Order is fixed: validate -> scope to tenant -> authorize -> handle. `authorize` calls
-`requirePermission` in `src/server/context.ts`, which does an RPC to `has_permission` — it asks
+`requirePermission` in `apps/reference/src/server/context.ts`, which does an RPC to `has_permission` — it asks
 the **database**, not `ctx.role` from the JWT, because that role was true when the token was
-minted and may not be now. `src/server/rpc/org.ts` `exportOrganization` is a compact example.
+minted and may not be now. `apps/reference/src/server/rpc/org.ts` `exportOrganization` is a compact example.
 
 Two narrower guards exist in the same file:
 
@@ -97,21 +97,21 @@ Two narrower guards exist in the same file:
 </Can>
 ```
 
-or `can(session(), org().id, "reports.read")` from `src/lib/auth.ts` for conditional logic —
-that is how the sidebar in `src/routes/_authed/$orgSlug.tsx` filters its links.
+or `can(session(), org().id, "reports.read")` from `apps/reference/src/lib/auth.ts` for conditional logic —
+that is how the sidebar in `apps/reference/src/routes/_authed/$orgSlug.tsx` filters its links.
 
 `<Can>` hides UI. It protects nothing: the permission list was resolved when the session was
 fetched and can be stale, and the endpoint is a plain HTTP POST anyone can issue directly. Its
 only job is to stop offering buttons that would fail. **Every `<Can>` must have a matching
-`authorize()` on the server.** `e2e/rbac.spec.ts` asserts both halves for the same action.
+`authorize()` on the server.** `apps/reference/e2e/rbac.spec.ts` asserts both halves for the same action.
 
 ### 6. Regenerate types
 
 ```
-npm run db:types    # supabase gen types typescript --local > src/lib/database.types.ts
+npm run db:types    # supabase gen types typescript --local > apps/reference/src/lib/database.types.ts
 ```
 
-`AppPermission` in `src/lib/auth.ts` is `Database["public"]["Enums"]["app_permission"]`, derived
+`AppPermission` in `apps/reference/src/lib/auth.ts` is `Database["public"]["Enums"]["app_permission"]`, derived
 from the generated file rather than hand-written. So the new permission becomes available to
 `authorize()`, `can()` and `<Can permission=...>` automatically — and **forgetting the regen is
 why TypeScript says your permission does not exist**. Run `npm run db:reset` first if the
@@ -147,12 +147,12 @@ local indexed column.
 
 ### 8. Test it
 
-- `src/server/rls.integration.test.ts` — talks to PostgREST with a real user's token and **no
+- `apps/reference/src/server/rls.integration.test.ts` — talks to PostgREST with a real user's token and **no
   application code in the path**, so it proves the database refuses the write even if the app
   layer were bypassed. Seeded users: `owner@acme.test`, `admin@acme.test`, `member@acme.test`,
   `viewer@acme.test`, `outsider@globex.test`, password `password123`. Tests skip automatically
   when the local stack is down; CI fails if anything was skipped.
-- `e2e/rbac.spec.ts` — the UI half plus `callRpc(page, module, fn, payload)` from `e2e/helpers.ts`,
+- `apps/reference/e2e/rbac.spec.ts` — the UI half plus `callRpc(page, module, fn, payload)` from `apps/reference/e2e/helpers.ts`,
   which invokes the server function directly to prove hiding the button was not the protection.
 
 `npm run verify` runs typecheck, vitest and Playwright.
@@ -160,7 +160,7 @@ local indexed column.
 ## Rules that permissions cannot express
 
 `members.manage` answers "may this user administer members at all". It cannot answer questions
-relative to actor and target. Those live in `src/server/services/members.ts`:
+relative to actor and target. Those live in `apps/reference/src/server/services/members.ts`:
 
 - **An admin may not mint an owner.** `assertCanAssignRole(actorRole, targetRole)` — you may
   grant any role up to and including your own. Without it an admin legitimately holding
@@ -184,7 +184,7 @@ deliberately does not pick a payment provider. It is a seam to gate your billing
 ## The rule that is not a permission: issue status
 
 An issue's assignee may change its status without `issues.write`. See
-`supabase/migrations/20260824060000_issue_status_by_assignee.sql`.
+`apps/reference/supabase/migrations/20260824060000_issue_status_by_assignee.sql`.
 
 This is `public.set_issue_status(target_issue, next_status)` — a SECURITY DEFINER function —
 rather than a widened RLS policy, because **the permission is column-scoped**. "May update the
@@ -197,9 +197,9 @@ removing someone from an org does not clear `assignee_id`, so `assignee = caller
 leave a removed member closing their old issues. Non-members get `no_data_found` rather than a
 403, so issue ids cannot be probed across tenants.
 
-Call path: `setIssueStatus` in `src/server/rpc/issues.ts` uses `withinOrg` (membership only),
+Call path: `setIssueStatus` in `apps/reference/src/server/rpc/issues.ts` uses `withinOrg` (membership only),
 then `ctx.db.rpc("set_issue_status", ...)`. The UI mirror is `canSetStatus()` in
-`src/components/IssueControls.tsx`, which calls `setIssueStatus` and never `updateIssue` —
+`apps/reference/src/components/IssueControls.tsx`, which calls `setIssueStatus` and never `updateIssue` —
 the latter demands `issues.write` and would refuse the very assignee the control exists for.
 
 Use this pattern only when the rule genuinely depends on the row. Reach for `authorize()` first.

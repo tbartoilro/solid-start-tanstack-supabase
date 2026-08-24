@@ -1,0 +1,26 @@
+{
+  "name": "solid-tanstack-supabase",
+  "version": "1.0.0",
+  "description": "A configurable admin framework for multi-tenant Postgres apps, and the reference implementation it is built from",
+  "type": "module",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w apps/reference",
+    "build": "npm run build -w apps/reference",
+    "start": "npm run start -w apps/reference",
+    "preview": "npm run preview -w apps/reference",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "test:e2e": "npm run test:e2e -w apps/reference",
+    "verify": "npm run typecheck && npm run test && npm run test:e2e",
+    "db:start": "npm run db:start -w apps/reference",
+    "db:stop": "npm run db:stop -w apps/reference",
+    "db:reset": "npm run db:reset -w apps/reference",
+    "db:types": "npm run db:types -w apps/reference",
+    "db:demo": "npm run db:demo -w apps/reference"
+  }
+}

@@ -1,6 +1,6 @@
 ---
 name: solidstart-tanstack-seam
-description: This skill should be used when working on routing, SSR or hydration in this template — "add a route", "add an API endpoint", "why did my page not update", "stale data after navigating", "the sidebar still shows the old org", "hydration mismatch", "my loader runs twice", "where does loader data come from", "it redirects me back to /login after signing in", "the form does nothing when I click it" — or whenever touching src/entry-server.tsx, src/entry-client.tsx, src/router.tsx, src/app.tsx, src/routes/**, src/api/** or the routerLoad seam.
+description: This skill should be used when working on routing, SSR or hydration in this template — "add a route", "add an API endpoint", "why did my page not update", "stale data after navigating", "the sidebar still shows the old org", "hydration mismatch", "my loader runs twice", "where does loader data come from", "it redirects me back to /login after signing in", "the form does nothing when I click it" — or whenever touching apps/reference/src/entry-server.tsx, apps/reference/src/entry-client.tsx, apps/reference/src/router.tsx, apps/reference/src/app.tsx, apps/reference/src/routes/**, apps/reference/src/api/** or the routerLoad seam.
 version: 0.1.0
 ---
 
@@ -18,10 +18,10 @@ prose. This file is the operating manual.
 
 | File | Job |
 |---|---|
-| `src/entry-server.tsx` | `createHandler(fn, options, routerLoad)` — the seam itself, plus the `<QueryState />` script tag |
-| `src/router.tsx` | `createRouter()` factory, `getQueryClient()`, `hydrateQueryState()`, `QUERY_STATE_ID` |
-| `src/app.tsx` | `resolveRouter()` — per-request router on the server, module router in the browser |
-| `src/entry-client.tsx` | rehydrates the query cache, then mounts `StartClientTanstack` |
+| `apps/reference/src/entry-server.tsx` | `createHandler(fn, options, routerLoad)` — the seam itself, plus the `<QueryState />` script tag |
+| `apps/reference/src/router.tsx` | `createRouter()` factory, `getQueryClient()`, `hydrateQueryState()`, `QUERY_STATE_ID` |
+| `apps/reference/src/app.tsx` | `resolveRouter()` — per-request router on the server, module router in the browser |
+| `apps/reference/src/entry-client.tsx` | rehydrates the query cache, then mounts `StartClientTanstack` |
 | `vite.config.ts` | keeps the two filesystem routers apart (`routeDir: "./api"`) |
 
 ## Ordering — why loader data is in the first byte
@@ -31,9 +31,9 @@ event and before render (signature verified in
 `node_modules/@solidjs/start/dist/server/handler.d.ts`):
 
 ```
-1. middleware      src/middleware.ts populates event.locals (supabase, auth, activeOrgId, nonce)
-2. routerLoad      src/entry-server.tsx matches the route and awaits router.load()
-3. render          src/app.tsx reads the already-loaded router off event.locals
+1. middleware      apps/reference/src/middleware.ts populates event.locals (supabase, auth, activeOrgId, nonce)
+2. routerLoad      apps/reference/src/entry-server.tsx matches the route and awaits router.load()
+3. render          apps/reference/src/app.tsx reads the already-loaded router off event.locals
 ```
 
 `routerLoad` creates a router, parks it on `event.locals.router`, calls
@@ -45,14 +45,14 @@ QueryClient the loaders are about to fill.
 ## Rules that must not be broken
 
 **1. The server router is per-request. Never a module singleton.**
-`createRouter()` in `src/router.tsx` is a factory. Its QueryClient holds one
+`createRouter()` in `apps/reference/src/router.tsx` is a factory. Its QueryClient holds one
 request's loader data; sharing an instance would serve one user's rows to
 another. `clientRouter` is a module-level instance *only* because
-`isServer ? undefined : createRouter()`. `resolveRouter()` in `src/app.tsx`
+`isServer ? undefined : createRouter()`. `resolveRouter()` in `apps/reference/src/app.tsx`
 throws rather than falling back when `event.locals.router` is missing — do not
 "fix" that throw by substituting `clientRouter`.
 
-**2. `StartClientTanstack`, not `StartClient`.** `src/entry-client.tsx` mounts
+**2. `StartClientTanstack`, not `StartClient`.** `apps/reference/src/entry-client.tsx` mounts
 `StartClientTanstack` (both are exported from `@solidjs/start/client`). It wraps
 one fewer element, so the client tree depth matches what the server rendered.
 The wrong one yields hydration mismatches, which SolidStart reports as a console
@@ -62,16 +62,16 @@ warning and nothing else.
 Router's own SSR payload mechanism is not in play when SolidStart owns the
 document. Out of the box every loader would re-run on hydration. The chain is:
 
-- loaders call `context.queryClient.ensureQueryData(<something from src/lib/queries.ts>)`
-- `<QueryState />` in `src/entry-server.tsx` inlines `dehydrate(...)` into
+- loaders call `context.queryClient.ensureQueryData(<something from apps/reference/src/lib/queries.ts>)`
+- `<QueryState />` in `apps/reference/src/entry-server.tsx` inlines `dehydrate(...)` into
   `<script id="__QUERY_STATE__" type="application/json">` (`<` escaped so a value
   containing `</script>` cannot break out)
-- `hydrateQueryState()` runs in `src/entry-client.tsx` **before** `mount`
+- `hydrateQueryState()` runs in `apps/reference/src/entry-client.tsx` **before** `mount`
 
 A loader that fetches by any other route — a bare `fetch`, a `"use server"` call
 outside a query, state stashed on a module — is invisible to `dehydrate` and will
 re-fetch after hydration. Always go through a `queryOptions` factory in
-`src/lib/queries.ts`, and have the component read the **same key** via `useQuery`;
+`apps/reference/src/lib/queries.ts`, and have the component read the **same key** via `useQuery`;
 a key that drifts from the loader's is a guaranteed refetch.
 
 Also load-bearing: `staleTime: 60_000` in `createRouter()`'s default options.
@@ -81,33 +81,33 @@ deliberate — Query owns freshness, the router must not add a second policy.
 
 ## Adding a page route
 
-1. Create the file under `src/routes/`. Nesting is the URL:
-   `src/routes/_authed/$orgSlug/projects/index.tsx` →
+1. Create the file under `apps/reference/src/routes/`. Nesting is the URL:
+   `apps/reference/src/routes/_authed/$orgSlug/projects/index.tsx` →
    `createFileRoute("/_authed/$orgSlug/projects/")`. `_authed` is a pathless
-   layout (session gate, `src/routes/_authed.tsx`); `$orgSlug` is the tenant
-   scope (`src/routes/_authed/$orgSlug.tsx`, which publishes `org` on context).
+   layout (session gate, `apps/reference/src/routes/_authed.tsx`); `$orgSlug` is the tenant
+   scope (`apps/reference/src/routes/_authed/$orgSlug.tsx`, which publishes `org` on context).
 2. `tanstackRouter({ target: "solid" })` in `vite.config.ts` regenerates
-   `src/routeTree.gen.ts` on save. That file is committed but never hand-edited.
+   `apps/reference/src/routeTree.gen.ts` on save. That file is committed but never hand-edited.
 3. Search params: `validateSearch` with a zod schema. Use `.catch(1)` style
    fallbacks so `?page=banana` degrades instead of throwing — see
-   `src/routes/_authed/$orgSlug/issues.tsx`.
+   `apps/reference/src/routes/_authed/$orgSlug/issues.tsx`.
 4. If the loader depends on search params, declare `loaderDeps` — that is what
    makes it re-run on a filter change, and only then.
 5. Loader: `ensureQueryData` on a shared query, never a direct RPC call.
 6. Guards go in `beforeLoad` and `throw redirect(...)` / `throw notFound()`, so
    the decision happens during SSR and no intermediate screen paints. See
-   `src/routes/index.tsx`.
+   `apps/reference/src/routes/index.tsx`.
 7. Route guards are UX, not security. Every `"use server"` function is a public
    HTTP endpoint; `authorize()` in the RPC layer and RLS are the real checks.
-   The banner in `src/routes/_authed.tsx` says so at length.
+   The banner in `apps/reference/src/routes/_authed.tsx` says so at length.
 
 ## Adding an HTTP endpoint
 
-`src/api/**` belongs to SolidStart's filesystem router; `src/routes/**` belongs
+`apps/reference/src/api/**` belongs to SolidStart's filesystem router; `apps/reference/src/routes/**` belongs
 entirely to TanStack Router. They never see each other's files.
 
-`routeDir: "./api"` makes `src/api` the route **root**, so there is no `/api`
-prefix: `src/api/health.ts` is served at `/health`, `src/api/auth/callback.ts`
+`routeDir: "./api"` makes `apps/reference/src/api` the route **root**, so there is no `/api`
+prefix: `apps/reference/src/api/health.ts` is served at `/health`, `apps/reference/src/api/auth/callback.ts`
 at `/auth/callback`. Requesting `/api/health` falls through to TanStack Router
 and renders the not-found page with status 200 — a health check that reports
 success forever. Export `GET`/`POST`/… taking an `APIEvent`.
@@ -138,7 +138,7 @@ whole shell pinned to the previous tenant — the switcher kept the old name, th
 sidebar built `/old-slug/...` hrefs so every link showed the wrong org's data,
 and the equality check in the switch handler compared against the stale id, so
 you could not switch back. See the long comment at the top of `OrgLayout` in
-`src/routes/_authed/$orgSlug.tsx` and the entry in `CHECKLIST.md`.
+`apps/reference/src/routes/_authed/$orgSlug.tsx` and the entry in `CHECKLIST.md`.
 
 Two corollaries:
 
@@ -147,13 +147,13 @@ Two corollaries:
   `beforeLoad` alone.
 - **`<Show when={session}>` with an *uncalled* accessor is always truthy.** A
   function is truthy; TypeScript cannot catch it, and the branch silently never
-  flips. Caught in review on `src/routes/reset-password.tsx`, which would have
+  flips. Caught in review on `apps/reference/src/routes/reset-password.tsx`, which would have
   rendered a password form with no session. Always `when={session()}`.
 
 Passing `session()` down as a component prop is fine — Solid props are lazy
-getters, so `<Can session={session()} …>` stays reactive (`src/components/Can.tsx`).
+getters, so `<Can session={session()} …>` stays reactive (`apps/reference/src/components/Can.tsx`).
 
-`e2e/org-switching.spec.ts` guards this. It asserts the switcher label, the
+`apps/reference/e2e/org-switching.spec.ts` guards this. It asserts the switcher label, the
 heading, every sidebar href and the member list, because a URL-only assertion
 passes against the broken build.
 
@@ -171,13 +171,13 @@ await router.invalidate();
 `removeQueries`, not `invalidateQueries`. Invalidation only marks an entry stale
 and schedules a refetch for **active observers** — nothing observes the session,
 because the root route reads it in `beforeLoad` via `ensureQueryData`
-(`src/routes/__root.tsx`). An invalidated entry is handed back unchanged, the
+(`apps/reference/src/routes/__root.tsx`). An invalidated entry is handed back unchanged, the
 guard still sees the old value, and the router bounces you straight back to
-`/login`. The full note is in `src/routes/login.tsx`; the same pair appears in
+`/login`. The full note is in `apps/reference/src/routes/login.tsx`; the same pair appears in
 `signup.tsx`, `new-org.tsx`, `accept-invite.tsx`, `reset-password.tsx`,
 `_authed/account.tsx` and `_authed/$orgSlug.tsx`.
 
-Sign-out is the exception: `src/components/SignOutButton.tsx` calls
+Sign-out is the exception: `apps/reference/src/components/SignOutButton.tsx` calls
 `queryClient.clear()`, because *everything* cached was fetched as the previous
 user.
 
@@ -200,15 +200,15 @@ comes back.
 | Sign-in succeeds then bounces to `/login` | `invalidateQueries` where `removeQueries({ queryKey: ["session"] })` is required |
 | Switching org leaves stale name/links/data | a snapshotted `useRouteContext()()` |
 | A `<Show>` branch never flips | uncalled accessor in `when` |
-| New `/api/...` endpoint 404s | there is no `/api` prefix; `src/api/x.ts` serves `/x` |
+| New `/api/...` endpoint 404s | there is no `/api` prefix; `apps/reference/src/api/x.ts` serves `/x` |
 | `"No per-request router on event.locals"` | `routerLoad` is no longer passed as `createHandler`'s third argument |
 
 ## What this template does not do
 
-Server-side `<head>` management. `src/entry-server.tsx` ships a static
-`<title>Dashboard</title>`, and `PageTitle` (`src/components/title.tsx`) refines
+Server-side `<head>` management. `apps/reference/src/entry-server.tsx` ships a static
+`<title>Dashboard</title>`, and `PageTitle` (`apps/reference/src/components/title.tsx`) refines
 it client-side only — doing it properly would mean threading a head registry
 through the router, which was judged not worth it for an app entirely behind a
-login. `e2e/ssr.spec.ts` asserts that authenticated loader data is present in the raw
+login. `apps/reference/e2e/ssr.spec.ts` asserts that authenticated loader data is present in the raw
 server response, that a fully-rendered `/acme` issues **no** `/_server` requests
 at all, and that navigation produces no console warnings.

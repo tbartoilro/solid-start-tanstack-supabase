@@ -1,5 +1,5 @@
 {
-  "name": "solid_start_experimental",
+  "name": "@app/reference",
   "version": "1.0.0",
   "description": "Production-grade multi-tenant RBAC dashboard: SolidStart v2 + TanStack Router + Supabase",
   "type": "module",

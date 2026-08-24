@@ -6,11 +6,11 @@ Tracking file for the UI conversion. Updated as work lands.
 
 - [x] Install `@park-ui/panda-preset`, wire `createPreset` into `panda.config.ts`
 - [x] Write `components.json` by hand (`park-ui init` is interactive-only)
-- [x] Add 15 Park UI components to `src/components/ui/`
+- [x] Add 15 Park UI components to `apps/reference/src/components/ui/`
 - [x] Resolve the CLI's post-install error (it failed to pull transitive deps; closed the graph manually)
 - [x] `styled-system` codegen clean with the preset
 - [x] Bridge preset 0.43.1 (Ark anatomy v3) to Ark UI v5 slots/recipes
-- [x] Switch `src/app.tsx` from `app.css` to `panda.css` (+ Vite `styled-system` alias)
+- [x] Switch `apps/reference/src/app.tsx` from `app.css` to `panda.css` (+ Vite `styled-system` alias)
 - [x] App shell (sidebar, permission-filtered nav, org-switcher Menu)
 
 ## Screens
@@ -57,7 +57,7 @@ delete dialog text right-aligned.
       layouts: sticky top bar below `md`, left column from `md`. Deliberately
       NOT two rendered variants, which would put two `<nav>`s and two "Sign out"
       buttons in the tree and break both a11y and the e2e locators.
-- [x] Shared list primitives in `src/components/data.tsx`: `TableScroll`,
+- [x] Shared list primitives in `apps/reference/src/components/data.tsx`: `TableScroll`,
       `FilterBar`, `Pagination`, `CreateBar`
 - [x] Stat tiles compact, three across on a phone
 - [x] Five list screens migrated onto the primitives (issues, members, projects,
@@ -68,7 +68,7 @@ delete dialog text right-aligned.
       - `truncate` does nothing inside a table cell: auto layout grows the
         column to the widest cell, so the cap must be a max-width on an element
         *inside* the cell
-- [x] `e2e/responsive.spec.ts` — 7 routes × 3 viewports assert the document
+- [x] `apps/reference/e2e/responsive.spec.ts` — 7 routes × 3 viewports assert the document
       never scrolls sideways, plus one test that the issues table stays wide and
       scrolls *inside* its container. 24 passing.
 - [x] Fixed a pre-existing e2e failure this surfaced (present on committed HEAD
@@ -94,7 +94,7 @@ dashboard showed the first org's data.
 - [x] Caught by review, not by the compiler: `<Show when={session}>` with an
       uncalled accessor is always truthy, so the reset-password form would have
       rendered with no session.
-- [x] `e2e/org-switching.spec.ts` — asserts switcher label, heading, every
+- [x] `apps/reference/e2e/org-switching.spec.ts` — asserts switcher label, heading, every
       sidebar href and the member list, because a URL-only assertion passes
       against the broken build.
 
@@ -106,7 +106,7 @@ bypassed. The stale links pointed at an organization the user does belong to.
 Internal horizontal scrolling was a poor way to read records on a phone — you
 could never see a whole row, and with many rows you scrolled in two axes.
 
-- [x] `ResponsiveTable` in `src/components/data.tsx`: below `md` each row is a
+- [x] `ResponsiveTable` in `apps/reference/src/components/data.tsx`: below `md` each row is a
       card and the off-screen columns stack underneath, labelled. From `md` up
       it is an ordinary table.
 - [x] Cells declare their card role: `data-label`, `data-label data-block`
@@ -114,7 +114,7 @@ could never see a whole row, and with many rows you scrolled in two axes.
       (ordered last).
 - [x] Rows are flex columns on mobile so `order` can lift the identifying cell
       without reordering the desktop columns.
-- [x] ARIA roles stated in `src/components/ui/table.tsx`. Changing a table
+- [x] ARIA roles stated in `apps/reference/src/components/ui/table.tsx`. Changing a table
       element's `display` strips its *implicit* role in every major browser, so
       without this the tables stop being tables to a screen reader and
       `getByRole("table")` stops matching.
@@ -122,7 +122,7 @@ could never see a whole row, and with many rows you scrolled in two axes.
       Delete buttons and two Selects — the duplicate-control trap already hit
       with the nav and Sign out button.
 - [ ] All five tables converted
-- [ ] `e2e/responsive.spec.ts` rewritten — it previously asserted the *opposite*
+- [ ] `apps/reference/e2e/responsive.spec.ts` rewritten — it previously asserted the *opposite*
       contract (table stays wide and scrolls)
 - [ ] Re-verify and visual check at 390 / 768 / 1440
 
@@ -140,12 +140,12 @@ could never see a whole row, and with many rows you scrolled in two axes.
 
 - [x] Nobody could create, edit, delete, reassign or restatus an issue on any
       screen, so `issues.write` and `issues.assign` existed only in the
-      database. Both issue tables now share `src/components/IssueControls.tsx`,
+      database. Both issue tables now share `apps/reference/src/components/IssueControls.tsx`,
       so the rule for who sees what is written once rather than twice.
 - [x] The status picker is offered to an issue's assignee whatever role they
       hold — being handed a task carries the right to report on it. Enforced by
       `public.set_issue_status`, not by the gate that hides the control.
-- [x] `e2e/issue-permissions.spec.ts` drives the viewer through the real control
+- [x] `apps/reference/e2e/issue-permissions.spec.ts` drives the viewer through the real control
       for the row-dependent rule and asserts every refusal at the endpoint, on
       the message as well as the failure.
 

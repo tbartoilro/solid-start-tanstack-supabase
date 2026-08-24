@@ -24,15 +24,15 @@ no UI in the picture.
 
 Therefore:
 
-- `beforeLoad` guards (`src/routes/_authed.tsx`, `src/routes/_authed/$orgSlug.tsx`)
+- `beforeLoad` guards (`apps/reference/src/routes/_authed.tsx`, `apps/reference/src/routes/_authed/$orgSlug.tsx`)
   are **UX only**. They stop navigation and prevent an auth flash. Delete every
   one of them and the app should look broken but leak nothing.
-- `<Can>` (`src/components/Can.tsx`) and `can()` (`src/lib/auth.ts`) decide what
+- `<Can>` (`apps/reference/src/components/Can.tsx`) and `can()` (`apps/reference/src/lib/auth.ts`) decide what
   to **render**. They protect nothing.
-- The enforcement that holds is `authorize()` in `src/server/guard.ts`, with RLS
+- The enforcement that holds is `authorize()` in `apps/reference/src/server/guard.ts`, with RLS
   underneath.
 
-`e2e/rbac.spec.ts` is the proof. Its `callRpc` helper in `e2e/helpers.ts`
+`apps/reference/e2e/rbac.spec.ts` is the proof. Its `callRpc` helper in `apps/reference/e2e/helpers.ts`
 `page.evaluate`s an `import("/src/server/rpc/<module>.ts")` inside the browser
 and calls the exported function directly — the client stub Vite generates —
 so the assertion exercises the real transport with the router bypassed
@@ -42,10 +42,10 @@ entirely. Any new privileged endpoint deserves a test there.
 
 | Layer | Location | Job | Not its job |
 |---|---|---|---|
-| 1. Middleware | `src/middleware.ts` | Who is asking. Builds the request Supabase client, verifies the token, parses the `orgs` claim, resolves the active org, fills `event.locals`. | Any authorization decision. |
-| 2. RPC boundary | `src/server/rpc/*` | The trust boundary. Validate, authorize, translate errors. Thin. | Business rules, SQL. |
-| 3. Domain services | `src/server/services/*` | Logic over an explicit `OrgContext`/`AuthContext`. Unit-testable with no server. | Reading cookies, deciding who the caller is. |
-| 4. Data + RLS | `supabase/migrations/*` | Queries and the database backstop. | Being the only line of defence. |
+| 1. Middleware | `apps/reference/src/middleware.ts` | Who is asking. Builds the request Supabase client, verifies the token, parses the `orgs` claim, resolves the active org, fills `event.locals`. | Any authorization decision. |
+| 2. RPC boundary | `apps/reference/src/server/rpc/*` | The trust boundary. Validate, authorize, translate errors. Thin. | Business rules, SQL. |
+| 3. Domain services | `apps/reference/src/server/services/*` | Logic over an explicit `OrgContext`/`AuthContext`. Unit-testable with no server. | Reading cookies, deciding who the caller is. |
+| 4. Data + RLS | `apps/reference/supabase/migrations/*` | Queries and the database backstop. | Being the only line of defence. |
 
 Middleware uses `getClaims()`, never `getSession()` — the latter trusts the
 cookie without verifying the signature. Note the gotcha documented in the file:
@@ -63,7 +63,7 @@ SolidStart's via `getRequestEvent()`.
 4. Tenant-scoped but the rule **depends on the row** (currently only
    `setIssueStatus`, which the assignee may call without `issues.write`)?
    `withinOrg(schema, raw)` for membership, then a `security definer` database
-   function that can see the row. See `supabase/migrations/20260824060000_issue_status_by_assignee.sql`.
+   function that can see the row. See `apps/reference/supabase/migrations/20260824060000_issue_status_by_assignee.sql`.
 5. Would it be a security or integrity bug if an application path forgot it?
    A trigger, not service code. See below.
 
@@ -78,15 +78,15 @@ it.
 
 ## RBAC: JWT for speed, database for truth
 
-- `public.custom_access_token_hook` (`supabase/migrations/20260820120100_rbac.sql`)
+- `public.custom_access_token_hook` (`apps/reference/supabase/migrations/20260820120100_rbac.sql`)
   stamps an `orgs` claim of `{id, slug, role}` into every issued token. Only
   membership edges, never the resolved permission set, so a permission change in
   a migration does not leave stale copies in outstanding tokens.
 - `private.authorize(permission, org_id)` is the authority. It is reached from
   TypeScript through the `public.has_permission()` wrapper
-  (`supabase/migrations/20260820120400_authorize_rpc.sql`, `security invoker` so
+  (`apps/reference/supabase/migrations/20260820120400_authorize_rpc.sql`, `security invoker` so
   `auth.uid()` resolves to the real caller), and from every RLS policy directly.
-- `requirePermission()` in `src/server/context.ts` calls `has_permission` and is
+- `requirePermission()` in `apps/reference/src/server/context.ts` calls `has_permission` and is
   what `authorize()` uses. It deliberately does **not** read `ctx.role`.
 
 **The claim is a cache and it goes stale.** Revoking a role does not invalidate
@@ -96,9 +96,9 @@ claim may decide what to render; it must never decide whether a write succeeds.
 context whose every query RLS refuses.
 
 Permissions are read from the `role_permissions` table (`getSession` in
-`src/server/rpc/auth.ts`), never mirrored in TypeScript, so the UI cannot
-disagree with the database. `AppRole`/`AppPermission` in `src/lib/auth.ts` are
-derived from `src/lib/database.types.ts`, so adding an enum value in a migration
+`apps/reference/src/server/rpc/auth.ts`), never mirrored in TypeScript, so the UI cannot
+disagree with the database. `AppRole`/`AppPermission` in `apps/reference/src/lib/auth.ts` are
+derived from `apps/reference/src/lib/database.types.ts`, so adding an enum value in a migration
 and forgetting the frontend is a type error. Regenerate with `npm run db:types`.
 
 Helper functions live in the `private` schema, which is not in PostgREST's
@@ -106,13 +106,13 @@ exposed schema list — *that*, not privilege revocation, is what stops clients
 calling them. `authenticated` must keep `USAGE`/`EXECUTE` there, because an RLS
 policy expression is evaluated with the querying role's privileges.
 
-RLS policies (`supabase/migrations/20260820120200_rls.sql`) wrap every helper
+RLS policies (`apps/reference/supabase/migrations/20260820120200_rls.sql`) wrap every helper
 call in `(select ...)` so Postgres evaluates it once per statement as an
 InitPlan rather than per row, and index every policy-referenced column.
 
 ## Invariants live in the database
 
-`supabase/migrations/20260820120300_triggers.sql`, all `security definer` with
+`apps/reference/supabase/migrations/20260820120300_triggers.sql`, all `security definer` with
 `set search_path = ''`:
 
 - `on_auth_user_created` → `public.handle_new_user()`: profile row on signup, so
@@ -130,17 +130,17 @@ InitPlan rather than per row, and index every policy-referenced column.
   history cannot be forged or rewritten, including by an owner.
 
 Escalation is guarded in the service layer too: `assertCanAssignRole()` in
-`src/server/services/members.ts` stops an admin — who legitimately holds
+`apps/reference/src/server/services/members.ts` stops an admin — who legitimately holds
 `members.manage` — from minting an owner.
 
 ## Error and leak discipline
 
-`src/server/errors.ts`: an unauthorized *tenant read* returns **404, not 403**.
+`apps/reference/src/server/errors.ts`: an unauthorized *tenant read* returns **404, not 403**.
 A 403 confirms the resource exists, which lets one tenant map another's data by
 probing ids. Use `forbidden()` only when the caller provably already knows the
 resource exists — e.g. lacking a permission inside an org they belong to.
 
-`src/server/on-error.ts` (wired via `serverFunctions.onError` in
+`apps/reference/src/server/on-error.ts` (wired via `serverFunctions.onError` in
 `vite.config.ts`) is the last gate: deliberate `AppError`s pass through, `Response`
 (thrown redirects) passes through, everything else is logged in full server-side
 and replaced with a generic message.
@@ -151,21 +151,21 @@ is load-bearing, not defensive noise.
 
 ## SSR seam, in one paragraph
 
-`createHandler`'s third argument (`routerLoad` in `src/entry-server.tsx`) runs
+`createHandler`'s third argument (`routerLoad` in `apps/reference/src/entry-server.tsx`) runs
 after middleware and before render, so loaders resolve into the first byte of
 HTML. Loader data transfer is **not** automatic: TanStack Query is the vehicle —
 loaders go through `ensureQueryData` with definitions shared from
-`src/lib/queries.ts`, the server inlines the dehydrated cache as
+`apps/reference/src/lib/queries.ts`, the server inlines the dehydrated cache as
 `#__QUERY_STATE__`, and the client rehydrates before mounting
-(`src/router.tsx`). A loader and its component must use the same query
-definition or the client refetches on hydration. `e2e/ssr.spec.ts` guards the
+(`apps/reference/src/router.tsx`). A loader and its component must use the same query
+definition or the client refetches on hydration. `apps/reference/e2e/ssr.spec.ts` guards the
 seam: loader data present in the raw server HTML, zero `/_server` requests on a
 fully-rendered page, and no console error or warning across three navigations —
 a SolidStart hydration mismatch surfaces as a warning and nothing else, so it
 fails silently if nobody watches.
 
-`src/api/**` is SolidStart's filesystem router (HTTP endpoints, no `/api`
-prefix); `src/routes/**` is entirely TanStack Router's.
+`apps/reference/src/api/**` is SolidStart's filesystem router (HTTP endpoints, no `/api`
+prefix); `apps/reference/src/routes/**` is entirely TanStack Router's.
 
 ## Verify
 
@@ -196,5 +196,5 @@ this overview:
 
 Billing (only the `org.billing` permission seam exists), soft deletes, realtime,
 i18n, cross-tenant superadmin, file storage. Data export *is* present:
-`exportOrganization` in `src/server/rpc/org.ts`, gated on `org.export`. Do not
+`exportOrganization` in `apps/reference/src/server/rpc/org.ts`, gated on `org.export`. Do not
 describe any of the absent items as supported.

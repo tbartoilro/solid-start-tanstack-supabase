@@ -10,12 +10,17 @@ WORKDIR /app
 # --ignore-scripts is required, not incidental: the `prepare` script runs
 # `panda codegen`, which needs panda.config.ts — and at this layer only
 # package.json has been copied. Codegen runs after the source is in place.
+# The workspace root's manifests plus the app's, so npm can resolve the whole
+# workspace graph. Build context is the repository root, not the app.
 COPY package.json package-lock.json* ./
+COPY apps/reference/package.json ./apps/reference/
 RUN npm ci --ignore-scripts
 
 COPY . .
 
-# Generates styled-system/, which the build imports.
+# Generates styled-system/, which the build imports. Run inside the app, where
+# panda.config.ts lives.
+WORKDIR /app/apps/reference
 RUN npx panda codegen
 
 # VITE_-prefixed values are inlined into the client bundle at build time, so
@@ -40,7 +45,7 @@ ENV NODE_ENV=production
 ENV PORT=3000
 
 # Nitro emits a self-contained server bundle, so no node_modules is needed.
-COPY --from=build /app/.output ./.output
+COPY --from=build /app/apps/reference/.output ./.output
 
 # Drops root before running the server.
 USER node
