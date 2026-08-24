@@ -103,7 +103,11 @@ test("following a sidebar link after switching stays in the new organization", a
 
   await page.locator("aside nav").getByRole("link", { name: "Members" }).click();
 
-  await expect(page).toHaveURL(new RegExp(`/${second.slug}/members$`));
+  // Tolerates the search params the link carries — the members route declares
+  // `page`, so the sidebar link is `?page=1` rather than a bare path. Anchoring
+  // on `$` asserted the absence of a query string, which was never the point:
+  // what matters is that the path belongs to the organization just switched to.
+  await expect(page).toHaveURL(new RegExp(`/${second.slug}/members(\\?|$)`));
   // The members list is the data assertion: the creator is the only member of
   // the new organization, so seeing anyone else means the previous tenant's
   // rows were rendered.
